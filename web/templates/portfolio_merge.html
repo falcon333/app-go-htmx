@@ -58,27 +58,41 @@
         <div class="lg:col-span-2">
             <form class="bg-white rounded-lg shadow p-6" method="post" action="/portfolios/merge">
                 <input type="hidden" name="chart" value="{{ .ChartEngine }}">
-                <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                    <div class="w-full md:max-w-md">
-                        <label class="block text-sm font-medium mb-1">Portfolio</label>
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium">Load</label>
+                        <select id="portfolio-load" class="rounded border px-2 py-2 text-sm">
+                            <option value="">Select portfolio...</option>
+                            {{ range .PortfolioItems }}
+                                <option value="{{ .Name }}" {{ if eq $.PortfolioSelected .Name }}selected{{ end }}>{{ .Name }}</option>
+                            {{ end }}
+                        </select>
+                    </div>
+                    <button type="button" id="portfolio-manage" class="rounded border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50">Manage</button>
+
+                    <div class="flex-1 min-w-[240px]">
+                        <label class="block text-sm font-medium mb-1">Portfolio Name</label>
                         <input
                             class="w-full rounded border px-3 py-2"
                             type="text"
+                            id="portfolio-base-name"
                             name="portfolio_name"
-                            list="portfolio-list"
                             value="{{ .PortfolioName }}"
-                            placeholder="Default"
-                            required
+                            placeholder="Best Portfolio"
                         />
-                        <datalist id="portfolio-list">
-                            {{ range .Portfolios }}
-                                <option value="{{ . }}"></option>
-                            {{ end }}
-                        </datalist>
                     </div>
-                    <button type="submit" class="inline-flex items-center rounded px-5 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700">
-                        Save Mappings
+
+                    <button type="button" id="portfolio-save" class="inline-flex items-center rounded px-5 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700">
+                        Save Portfolio
                     </button>
+                </div>
+
+                <div class="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                    <label class="inline-flex items-center gap-2">
+                        <input type="checkbox" id="portfolio-auto-append" {{ if .AutoAppendEnabled }}checked{{ end }}>
+                        Auto-append strategy count &amp; date range
+                    </label>
+                    <div class="text-xs text-gray-500">Final name: <span id="portfolio-final-name" class="font-medium text-gray-700">{{ .FinalNamePreview }}</span></div>
                 </div>
 
                 <div class="mt-6 overflow-x-auto">
@@ -96,7 +110,7 @@
                         </thead>
                         <tbody>
                         {{ range $i, $row := .Rows }}
-                        <tr class="odd:bg-white even:bg-gray-50">
+                        <tr class="odd:bg-white even:bg-gray-50" data-strategy-key="{{ $row.StrategyKey }}">
                             <td class="border px-3 py-2">
                                 <div class="font-medium">{{ $row.StrategyKey }}</div>
                                 <input type="hidden" name="rows[{{ $i }}].strategy_key" value="{{ $row.StrategyKey }}">
@@ -303,6 +317,54 @@
     {{ end }}
 </main>
 
+<div id="portfolio-manage-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 p-4">
+    <div class="w-full max-w-2xl rounded-lg bg-white p-5 shadow-lg">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Manage Portfolios</h2>
+            <button type="button" id="portfolio-manage-close" class="text-sm text-gray-500 hover:text-gray-700">Close</button>
+        </div>
+
+        <div class="mt-4 max-h-[360px] overflow-auto">
+            <table class="min-w-full text-sm border border-gray-200">
+                <thead class="bg-gray-50">
+                <tr>
+                    <th class="border px-3 py-2 text-left">Name</th>
+                    <th class="border px-3 py-2 text-left">Strategies</th>
+                    <th class="border px-3 py-2 text-left">Date Range</th>
+                    <th class="border px-3 py-2 text-left">Actions</th>
+                </tr>
+                </thead>
+                <tbody id="portfolio-manage-list">
+                {{ range .PortfolioItems }}
+                <tr class="odd:bg-white even:bg-gray-50" data-portfolio-name="{{ .Name }}">
+                    <td class="border px-3 py-2">{{ .Name }}</td>
+                    <td class="border px-3 py-2">{{ .StrategyCount }}</td>
+                    <td class="border px-3 py-2">{{ .DateRange }}</td>
+                    <td class="border px-3 py-2">
+                        <div class="flex gap-2">
+                            <button type="button" class="portfolio-load-btn rounded border border-blue-200 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50" data-name="{{ .Name }}">Load</button>
+                            <button type="button" class="portfolio-delete-btn rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50" data-name="{{ .Name }}">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+                {{ end }}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="portfolio-overwrite-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 p-4">
+    <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
+        <h2 class="text-lg font-semibold">Overwrite portfolio?</h2>
+        <p class="mt-2 text-sm text-gray-600" id="portfolio-overwrite-text">Portfolio already exists.</p>
+        <div class="mt-4 flex justify-end gap-2">
+            <button type="button" id="portfolio-overwrite-cancel" class="rounded border border-gray-200 px-3 py-1 text-sm">Cancel</button>
+            <button type="button" id="portfolio-overwrite-confirm" class="rounded bg-red-600 px-3 py-1 text-sm text-white">Overwrite</button>
+        </div>
+    </div>
+</div>
+
 <script>
     (function () {
         const form = document.getElementById("analysis-form");
@@ -312,6 +374,43 @@
         const autoRefresh = document.getElementById("analysis-auto-refresh");
         const applyBtn = document.getElementById("analysis-apply");
         const quickButtons = document.querySelectorAll(".quick-btn");
+
+        function syncMappingsToAnalysisForm() {
+            if (!form) return;
+            form.querySelectorAll("input[data-mapping-hidden='true']").forEach(el => el.remove());
+            const rows = document.querySelectorAll("tbody tr[data-strategy-key]");
+            rows.forEach((row, index) => {
+                const strategy = row.dataset.strategyKey || "";
+                const enabled = row.querySelector("input[name$='.enabled']")?.checked || false;
+                const weight = row.querySelector("input[name$='.weight']")?.value || "1";
+                const ratioMode = row.querySelector("input[name$='.ratio_mode']")?.checked || false;
+                const ratioUnit = row.querySelector("input[name$='.ratio_unit']")?.value || "1";
+                const ratioAmount = row.querySelector("input[name$='.ratio_amount']")?.value || "10000";
+                const notes = row.querySelector("input[name$='.notes']")?.value || "";
+
+                const add = (name, value) => {
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = `rows[${index}].${name}`;
+                    input.value = value;
+                    input.setAttribute("data-mapping-hidden", "true");
+                    form.appendChild(input);
+                };
+
+                add("strategy_key", strategy);
+                if (enabled) add("enabled", "on");
+                add("weight", weight);
+                if (ratioMode) add("ratio_mode", "on");
+                add("ratio_unit", ratioUnit);
+                add("ratio_amount", ratioAmount);
+                if (notes !== "") add("notes", notes);
+            });
+        }
+
+        function submitWithMappings() {
+            syncMappingsToAnalysisForm();
+            form.requestSubmit();
+        }
 
         function setActiveQuick(value) {
             quickInput.value = value;
@@ -366,8 +465,10 @@
             setActiveQuick(range);
             startInput.value = start ? formatDate(start) : "";
             endInput.value = end ? formatDate(end) : "";
+            startInput.dispatchEvent(new Event("change"));
+            endInput.dispatchEvent(new Event("change"));
             if (autoRefresh && autoRefresh.checked) {
-                form.requestSubmit();
+                submitWithMappings();
             }
         }
 
@@ -397,22 +498,298 @@
             setActiveQuick("");
             startInput.value = formatDate(start);
             endInput.value = formatDate(now);
+            startInput.dispatchEvent(new Event("change"));
+            endInput.dispatchEvent(new Event("change"));
             if (autoRefresh && autoRefresh.checked) {
-                form.requestSubmit();
+                submitWithMappings();
             }
         });
+
+        if (form) {
+            form.addEventListener("submit", () => syncMappingsToAnalysisForm());
+        }
 
         if (autoRefresh) {
             form.querySelectorAll("input, select").forEach(el => {
                 if (el.type === "checkbox" && el.id === "analysis-auto-refresh") return;
                 el.addEventListener("change", () => {
                     if (autoRefresh.checked) {
-                        form.requestSubmit();
+                        submitWithMappings();
                     }
                 });
             });
         }
     })();
+</script>
+<script>
+    window.addEventListener("load", () => {
+        const loadSelect = document.getElementById("portfolio-load");
+        const manageBtn = document.getElementById("portfolio-manage");
+        const manageModal = document.getElementById("portfolio-manage-modal");
+        const manageClose = document.getElementById("portfolio-manage-close");
+        const overwriteModal = document.getElementById("portfolio-overwrite-modal");
+        const overwriteText = document.getElementById("portfolio-overwrite-text");
+        const overwriteCancel = document.getElementById("portfolio-overwrite-cancel");
+        const overwriteConfirm = document.getElementById("portfolio-overwrite-confirm");
+        const baseInput = document.getElementById("portfolio-base-name");
+        const autoAppend = document.getElementById("portfolio-auto-append");
+        const previewEl = document.getElementById("portfolio-final-name");
+        const saveBtn = document.getElementById("portfolio-save");
+        const analysisBalanceInput = document.querySelector("input[name='analysis_balance']");
+        const analysisStart = document.getElementById("analysis-start");
+        const analysisEnd = document.getElementById("analysis-end");
+        const analysisQuick = document.getElementById("analysis-range-quick");
+        const analysisN = document.querySelector("[name='analysis_n']");
+        const analysisUnit = document.querySelector("[name='analysis_unit']");
+        const analysisPortfolio = document.querySelector("input[name='analysis_portfolio']");
+
+        let pendingOverwrite = null;
+
+        const formatNameDate = (value) => {
+            if (!value) return "";
+            const parts = value.split("-");
+            if (parts.length !== 3) return "";
+            return `${parts[1]}-${parts[2]}-${parts[0]}`;
+        };
+
+        const formatNameDateTime = (date) => {
+            const mm = String(date.getMonth() + 1).padStart(2, "0");
+            const dd = String(date.getDate()).padStart(2, "0");
+            const yyyy = date.getFullYear();
+            const hh = String(date.getHours()).padStart(2, "0");
+            const min = String(date.getMinutes()).padStart(2, "0");
+            return `${mm}-${dd}-${yyyy}-${hh}-${min}`;
+        };
+
+        const countEnabled = () =>
+            Array.from(document.querySelectorAll("tbody input[name$='.enabled']"))
+                .filter(el => el.checked)
+                .length;
+
+        const getDateRangeForPreview = () => {
+            const from = analysisStart ? analysisStart.value : "";
+            const to = analysisEnd ? analysisEnd.value : "";
+            if (from || to) {
+                return {
+                    from: formatNameDate(from || to),
+                    to: formatNameDate(to || from)
+                };
+            }
+            const now = new Date();
+            const mm = String(now.getMonth() + 1).padStart(2, "0");
+            const dd = String(now.getDate()).padStart(2, "0");
+            const yyyy = now.getFullYear();
+            const today = `${mm}-${dd}-${yyyy}`;
+            return { from: today, to: today };
+        };
+
+        const updatePreview = (overrideTimestamp) => {
+            if (!previewEl || !baseInput) return;
+            const base = baseInput.value.trim();
+            if (!base) {
+                previewEl.textContent = "";
+                return;
+            }
+            if (!autoAppend || !autoAppend.checked) {
+                previewEl.textContent = base;
+                return;
+            }
+            const { from, to } = getDateRangeForPreview();
+            const enabled = countEnabled();
+            const timestamp = overrideTimestamp || formatNameDateTime(new Date());
+            previewEl.textContent = `${base}_${enabled}Systems_${from}-${to}_${timestamp}`;
+        };
+
+        const collectMappings = () => {
+            return Array.from(document.querySelectorAll("tbody tr[data-strategy-key]")).map(row => {
+                const strategy = row.dataset.strategyKey || "";
+                const enabled = row.querySelector("input[name$='.enabled']")?.checked || false;
+                const weight = Number.parseFloat(row.querySelector("input[name$='.weight']")?.value || "1") || 1;
+                const ratioMode = row.querySelector("input[name$='.ratio_mode']")?.checked || false;
+                const ratioUnit = Number.parseFloat(row.querySelector("input[name$='.ratio_unit']")?.value || "1") || 1;
+                const ratioAmount = Number.parseFloat(row.querySelector("input[name$='.ratio_amount']")?.value || "10000") || 10000;
+                const notes = row.querySelector("input[name$='.notes']")?.value || "";
+                return { strategy, enabled, weight, ratio_mode: ratioMode, ratio_unit: ratioUnit, ratio_amount: ratioAmount, notes };
+            });
+        };
+
+        const collectAnalysis = () => ({
+            range_quick: analysisQuick ? analysisQuick.value : "",
+            n: analysisN ? analysisN.value : "",
+            unit: analysisUnit ? analysisUnit.value : "",
+            start_date: analysisStart ? analysisStart.value : "",
+            end_date: analysisEnd ? analysisEnd.value : "",
+            balance: analysisBalanceInput ? analysisBalanceInput.value : ""
+        });
+
+        const savePortfolio = async (overwrite) => {
+            const base = baseInput ? baseInput.value.trim() : "";
+            if (!base) {
+                alert("Portfolio name is required.");
+                return;
+            }
+            const timestamp = formatNameDateTime(new Date());
+            updatePreview(timestamp);
+            const payload = {
+                base_name: base,
+                auto_append: !!(autoAppend && autoAppend.checked),
+                overwrite: !!overwrite,
+                timestamp,
+                analysis: collectAnalysis(),
+                mappings: collectMappings()
+            };
+
+            const resp = await fetch("/api/portfolios/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (resp.status === 409) {
+                const data = await resp.json();
+                pendingOverwrite = payload;
+                if (overwriteText) {
+                    overwriteText.textContent = `Portfolio '${data.name || base}' already exists. Overwrite?`;
+                }
+                if (overwriteModal) overwriteModal.classList.remove("hidden");
+                return;
+            }
+
+            if (!resp.ok) {
+                const data = await resp.json().catch(() => null);
+                alert(data?.error || "Failed to save portfolio.");
+                return;
+            }
+
+            const data = await resp.json();
+            const name = data?.name || base;
+            window.location = `/portfolios/merge?portfolio=${encodeURIComponent(name)}`;
+        };
+
+        const loadPortfolio = async (name) => {
+            if (!name) return;
+            const resp = await fetch(`/api/portfolios/load?name=${encodeURIComponent(name)}`);
+            if (!resp.ok) {
+                alert("Failed to load portfolio.");
+                return;
+            }
+            const portfolio = await resp.json();
+            if (baseInput) baseInput.value = portfolio.base_name || portfolio.name || "";
+            if (analysisPortfolio) analysisPortfolio.value = portfolio.name || "";
+            if (analysisBalanceInput) analysisBalanceInput.value = portfolio.filters?.balance || "";
+            if (analysisStart) analysisStart.value = portfolio.filters?.from || "";
+            if (analysisEnd) analysisEnd.value = portfolio.filters?.to || "";
+            if (analysisQuick) {
+                const mode = String(portfolio.filters?.range_mode || "");
+                if (mode.startsWith("QUICK:")) {
+                    analysisQuick.value = mode.replace("QUICK:", "");
+                } else {
+                    analysisQuick.value = "";
+                }
+            }
+
+            const quickButtons = document.querySelectorAll(".quick-btn");
+            if (analysisQuick && quickButtons.length) {
+                quickButtons.forEach(btn => {
+                    const active = btn.dataset.range === analysisQuick.value;
+                    btn.classList.toggle("border-blue-600", active);
+                    btn.classList.toggle("text-blue-700", active);
+                    btn.classList.toggle("border-gray-200", !active);
+                });
+            }
+
+            const rows = document.querySelectorAll("tbody tr[data-strategy-key]");
+            rows.forEach(row => {
+                const key = String(row.dataset.strategyKey || "").toLowerCase();
+                const match = (portfolio.mappings || []).find(m => String(m.strategy || "").toLowerCase() === key);
+                if (!match) return;
+                const enabled = row.querySelector("input[name$='.enabled']");
+                const weight = row.querySelector("input[name$='.weight']");
+                const ratioMode = row.querySelector("input[name$='.ratio_mode']");
+                const ratioUnit = row.querySelector("input[name$='.ratio_unit']");
+                const ratioAmount = row.querySelector("input[name$='.ratio_amount']");
+                const notes = row.querySelector("input[name$='.notes']");
+                if (enabled) enabled.checked = !!match.enabled;
+                if (weight) weight.value = match.weight ?? 1;
+                if (ratioMode) ratioMode.checked = !!match.ratio_mode;
+                if (ratioUnit) ratioUnit.value = match.ratio_unit ?? 1;
+                if (ratioAmount) ratioAmount.value = match.ratio_amount ?? 10000;
+                if (notes) notes.value = match.notes ?? "";
+            });
+
+            updatePreview();
+        };
+
+        if (baseInput) baseInput.addEventListener("input", updatePreview);
+        if (autoAppend) autoAppend.addEventListener("change", updatePreview);
+        document.querySelectorAll("tbody input[name$='.enabled']").forEach(el => {
+            el.addEventListener("change", updatePreview);
+        });
+        if (analysisStart) analysisStart.addEventListener("change", updatePreview);
+        if (analysisEnd) analysisEnd.addEventListener("change", updatePreview);
+        if (analysisBalanceInput) analysisBalanceInput.addEventListener("change", updatePreview);
+
+        if (saveBtn) {
+            saveBtn.addEventListener("click", () => savePortfolio(false));
+        }
+
+        if (loadSelect) {
+            loadSelect.addEventListener("change", () => loadPortfolio(loadSelect.value));
+        }
+
+        if (manageBtn && manageModal) {
+            manageBtn.addEventListener("click", () => manageModal.classList.remove("hidden"));
+        }
+        if (manageClose && manageModal) {
+            manageClose.addEventListener("click", () => manageModal.classList.add("hidden"));
+        }
+
+        document.querySelectorAll(".portfolio-load-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const name = btn.getAttribute("data-name");
+                if (manageModal) manageModal.classList.add("hidden");
+                if (name && loadSelect) {
+                    loadSelect.value = name;
+                }
+                loadPortfolio(name);
+            });
+        });
+
+        document.querySelectorAll(".portfolio-delete-btn").forEach(btn => {
+            btn.addEventListener("click", async () => {
+                const name = btn.getAttribute("data-name");
+                if (!name) return;
+                if (!confirm(`Delete portfolio '${name}'?`)) return;
+                const resp = await fetch("/api/portfolios/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name })
+                });
+                if (!resp.ok) {
+                    alert("Failed to delete portfolio.");
+                    return;
+                }
+                window.location = "/portfolios/merge";
+            });
+        });
+
+        if (overwriteCancel && overwriteModal) {
+            overwriteCancel.addEventListener("click", () => {
+                overwriteModal.classList.add("hidden");
+                pendingOverwrite = null;
+            });
+        }
+        if (overwriteConfirm && overwriteModal) {
+            overwriteConfirm.addEventListener("click", async () => {
+                overwriteModal.classList.add("hidden");
+                if (!pendingOverwrite) return;
+                await savePortfolio(true);
+                pendingOverwrite = null;
+            });
+        }
+
+        updatePreview();
+    });
 </script>
 {{ if and .AnalysisResult .HasChartData (eq .ChartEngine "chartjs") }}
 <script>

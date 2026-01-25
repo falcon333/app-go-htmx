@@ -20,7 +20,7 @@
         </div>
         <div class="space-x-3 text-sm">
             <a class="text-blue-600 hover:underline" href="/imports/trades">Single import</a>
-            <a class="text-blue-600 hover:underline" href="/portfolios/merge?portfolio=Default">Portfolio merge</a>
+            <a class="text-blue-600 hover:underline" href="/portfolios/merge">Portfolio merge</a>
             <a class="text-blue-600 hover:underline" href="/portfolio">Back to portfolio</a>
         </div>
     </div>
@@ -32,7 +32,6 @@
                 <tr>
                     <th class="border px-3 py-2 text-left">CSV URL *</th>
                     <th class="border px-3 py-2 text-left">Strategy Name *</th>
-                    <th class="border px-3 py-2 text-left">Portfolio</th>
                     <th class="border px-3 py-2 text-left">Timezone</th>
                     <th class="border px-3 py-2 text-left">Start Date</th>
                     <th class="border px-3 py-2 text-left">End Date</th>
@@ -46,9 +45,6 @@
                     </td>
                     <td class="border px-3 py-2">
                         <input class="w-full rounded border px-2 py-1" type="text" name="rows[{{ $i }}].strategy_name" value="{{ $row.Strategy }}" placeholder="RSI-MES1!-60" required>
-                    </td>
-                    <td class="border px-3 py-2">
-                        <input class="w-full rounded border px-2 py-1" type="text" name="rows[{{ $i }}].portfolio_name" value="{{ $row.Portfolio }}" placeholder="Core-Portfolio">
                     </td>
                     <td class="border px-3 py-2">
                         <select class="w-full rounded border px-2 py-1" name="rows[{{ $i }}].timezone">
@@ -108,7 +104,6 @@
                     <tr>
                         <th class="border px-3 py-2 text-left">Row #</th>
                         <th class="border px-3 py-2 text-left">Strategy</th>
-                        <th class="border px-3 py-2 text-left">Portfolio</th>
                         <th class="border px-3 py-2 text-left">URL</th>
                         <th class="border px-3 py-2 text-left">Status</th>
                         <th class="border px-3 py-2 text-left">Imported</th>
@@ -122,7 +117,6 @@
                     <tr class="odd:bg-white even:bg-gray-50">
                         <td class="border px-3 py-2">{{ .Row }}</td>
                         <td class="border px-3 py-2">{{ .Strategy }}</td>
-                        <td class="border px-3 py-2">{{ .Portfolio }}</td>
                         <td class="border px-3 py-2 truncate max-w-xs">{{ .CSVURL }}</td>
                         <td class="border px-3 py-2 {{ if eq .Status "OK" }}text-green-700{{ else }}text-red-600{{ end }}">{{ .Status }}</td>
                         <td class="border px-3 py-2">{{ .Imported }}</td>
@@ -166,9 +160,6 @@
             </td>
             <td class="border px-3 py-2">
                 <input class="w-full rounded border px-2 py-1" type="text" name="rows[${index}].strategy_name" placeholder="RSI-MES1!-60" required>
-            </td>
-            <td class="border px-3 py-2">
-                <input class="w-full rounded border px-2 py-1" type="text" name="rows[${index}].portfolio_name" placeholder="Core-Portfolio">
             </td>
             <td class="border px-3 py-2">
                 <select class="w-full rounded border px-2 py-1" name="rows[${index}].timezone">
