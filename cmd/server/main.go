@@ -1118,7 +1118,6 @@ func executeTradeImportFromTrades(ctx context.Context, input ImportInput, valida
 		t.Strategy = validation.Meta.Strategy
 		t.Symbol = validation.Meta.Symbol
 		t.Timeframe = validation.Meta.Timeframe
-		t.Portfolio = input.Portfolio
 
 		if validation.StartDate != nil && t.ExitDatetime.Before(*validation.StartDate) {
 			filtered++
@@ -1135,9 +1134,6 @@ func executeTradeImportFromTrades(ctx context.Context, input ImportInput, valida
 	summary, err := trades.InsertTradesDedup(ctx, trades.DefaultStore(), finalTrades)
 	if err != nil {
 		return trades.ImportSummary{}, rowErrors, filtered, err
-	}
-	if input.Portfolio != "" {
-		_ = trades.EnsureMappingForStrategy(input.Portfolio, validation.Meta.Strategy)
 	}
 
 	return summary, rowErrors, filtered, nil
@@ -1173,8 +1169,6 @@ func parseBatchRows(form url.Values) []BatchImportRow {
 			row.CSVURL = value
 		case "strategy_name":
 			row.Strategy = value
-		case "portfolio_name":
-			row.Portfolio = value
 		case "timezone":
 			row.Timezone = value
 		case "start_date":

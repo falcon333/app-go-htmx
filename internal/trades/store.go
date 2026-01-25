@@ -72,6 +72,10 @@ func InsertTradesDedup(ctx context.Context, store Store, trades []Trade) (Import
 		if t.ID != "" {
 			seen[t.ID] = struct{}{}
 		}
+		computed := ComputeTradeID(t)
+		if computed != "" {
+			seen[computed] = struct{}{}
+		}
 	}
 
 	summary := ImportSummary{}
@@ -99,7 +103,7 @@ func InsertTradesDedup(ctx context.Context, store Store, trades []Trade) (Import
 }
 
 func ComputeTradeID(trade Trade) string {
-	input := trade.Strategy + "|" + trade.Portfolio + "|" + trade.Symbol + "|" +
+	input := trade.Strategy + "|" + trade.Symbol + "|" +
 		trade.Direction + "|" + trade.EntryDatetime.UTC().Format(time.RFC3339Nano) + "|" +
 		trade.ExitDatetime.UTC().Format(time.RFC3339Nano) + "|" +
 		formatFloat(trade.EntryPrice) + "|" + formatFloat(trade.ExitPrice) + "|" +
