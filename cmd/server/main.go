@@ -570,8 +570,14 @@ func main() {
 			portfolioName := strings.TrimSpace(r.URL.Query().Get("portfolio"))
 			chartEngine := normalizeChartEngine(r.URL.Query().Get("chart"))
 			analysis := loadAnalysisState(portfolioName)
+			if portfolioName != "" {
+				if loaded, err := trades.LoadPortfolioByName(portfolioName); err == nil && loaded != nil {
+					analysis = applyPortfolioFilters(analysis, loaded)
+				}
+				analysis.Portfolio = portfolioName
+			}
 			result := (*AnalysisResult)(nil)
-			if strings.TrimSpace(analysis.Portfolio) != "" && (analysis.AutoRefresh || r.URL.Query().Has("chart")) {
+			if analysis.AutoRefresh || r.URL.Query().Has("chart") {
 				if computed, err := computeAnalysisResult(analysis); err == nil {
 					result = computed
 				}
@@ -594,7 +600,7 @@ func main() {
 		chartEngine := normalizeChartEngine(r.FormValue("chart"))
 		inputs := parseMappingRows(r.Form)
 
-		analysis := loadAnalysisState(portfolioName)
+		analysis := loadAnalysisState("")
 		result := (*AnalysisResult)(nil)
 		vm, err := buildPortfolioMergeViewModel(portfolioName, analysis, result, "", chartEngine, buildBaseQuery(portfolioName))
 		if err != nil {
@@ -603,28 +609,7 @@ func main() {
 			return
 		}
 
-		if portfolioName == "" {
-			vm.ErrorMessage = "Portfolio is required."
-			vm.Rows = mappingInputsToView(inputs)
-			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
-			return
-		}
-
-		_, err = trades.UpsertMappings(portfolioName, inputs)
-		if err != nil {
-			vm.ErrorMessage = err.Error()
-			vm.Rows = mappingInputsToView(inputs)
-			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
-			return
-		}
-
-		if saveErr := saveAnalysisState(analysis); saveErr != nil {
-			vm.ErrorMessage = saveErr.Error()
-		}
-		vm, err = buildPortfolioMergeViewModel(portfolioName, analysis, result, "Mappings saved successfully.", chartEngine, buildBaseQuery(portfolioName))
-		if err != nil {
-			vm.ErrorMessage = err.Error()
-		}
+		vm.Rows = mappingInputsToView(inputs)
 		_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
 	})
 
@@ -670,16 +655,176 @@ func main() {
 		vm, err := buildPortfolioMergeViewModel(portfolioName, analysis, result, "Dashboard updated.", chartEngine, buildBaseQuery(portfolioName))
 		if err != nil {
 			vm.ErrorMessage = err.Error()
+			if len(inputs) > 0 {
+				vm.Rows = mappingInputsToView(inputs)
+			}
 			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
 			return
 		}
-		if portfolioName == "" {
-			vm.ErrorMessage = "Portfolio is required."
-			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+		if len(inputs) > 0 {
+			vm.Rows = mappingInputsToView(inputs)
+		}
+		_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+	})
+
+	// =================================================
+	// Portfolio API (save/load/delete/list)
+	// =================================================
+	mux.HandleFunc("/api/portfolios", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 
-		_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+		items, err := trades.ListSavedPortfolios()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+
+		list := make([]PortfolioListItem, 0, len(items))
+		for _, p := range items {
+			list = append(list, PortfolioListItem{
+				Name:          p.Name,
+				BaseName:      p.BaseName,
+				StrategyCount: p.Meta.StrategyCount,
+				DateRange:     formatPortfolioDateRange(p.Filters.From, p.Filters.To),
+			})
+		}
+
+		writeJSON(w, http.StatusOK, list)
+	})
+
+	mux.HandleFunc("/api/portfolios/load", func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimSpace(r.URL.Query().Get("name"))
+		if name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+			return
+		}
+		portfolio, err := trades.LoadPortfolioByName(name)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if portfolio == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, portfolio)
+	})
+
+	mux.HandleFunc("/api/portfolios/delete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		var payload struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
+			return
+		}
+		if err := trades.DeletePortfolioByName(payload.Name); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	mux.HandleFunc("/api/portfolios/save", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		var payload struct {
+			BaseName   string `json:"base_name"`
+			AutoAppend bool   `json:"auto_append"`
+			Overwrite  bool   `json:"overwrite"`
+			Timestamp  string `json:"timestamp"`
+			Analysis   struct {
+				RangeQuick string `json:"range_quick"`
+				N          string `json:"n"`
+				Unit       string `json:"unit"`
+				StartDate  string `json:"start_date"`
+				EndDate    string `json:"end_date"`
+				Balance    string `json:"balance"`
+			} `json:"analysis"`
+			Mappings []trades.PortfolioMapping `json:"mappings"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
+			return
+		}
+
+		baseName := strings.TrimSpace(payload.BaseName)
+		if baseName == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "portfolio name is required"})
+			return
+		}
+
+		analysisState := AnalysisState{
+			RangeQuick: strings.TrimSpace(payload.Analysis.RangeQuick),
+			N:          strings.TrimSpace(payload.Analysis.N),
+			Unit:       strings.TrimSpace(payload.Analysis.Unit),
+			StartDate:  strings.TrimSpace(payload.Analysis.StartDate),
+			EndDate:    strings.TrimSpace(payload.Analysis.EndDate),
+			Balance:    strings.TrimSpace(payload.Analysis.Balance),
+		}
+
+		enabledCount := 0
+		for _, m := range payload.Mappings {
+			if m.Enabled {
+				enabledCount++
+			}
+		}
+
+		start, end := resolveNameDates(analysisState)
+		finalName := buildPortfolioFinalName(baseName, enabledCount, start, end, payload.AutoAppend, payload.Timestamp)
+		if strings.TrimSpace(finalName) == "" {
+			finalName = baseName
+		}
+
+		balance := 0.0
+		if strings.TrimSpace(analysisState.Balance) != "" {
+			if v, err := strconv.ParseFloat(strings.TrimSpace(analysisState.Balance), 64); err == nil {
+				balance = v
+			}
+		}
+
+		filters := trades.PortfolioFilters{
+			From:      formatDatePtr(start),
+			To:        formatDatePtr(end),
+			Balance:   balance,
+			RangeMode: buildRangeMode(analysisState),
+		}
+
+		portfolio := trades.Portfolio{
+			Name:     finalName,
+			BaseName: baseName,
+			Filters:  filters,
+			Mappings: payload.Mappings,
+			Meta: trades.PortfolioMeta{
+				StrategyCount: enabledCount,
+			},
+		}
+
+		saved, exists, err := trades.SavePortfolio(portfolio, payload.Overwrite)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if exists && !payload.Overwrite {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "exists", "name": finalName})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "ok",
+			"name":   saved.Name,
+		})
 	})
 
 	// =================================================
