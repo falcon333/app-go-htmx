@@ -638,13 +638,17 @@ func main() {
 		analysis := parseAnalysisState(r.Form)
 		portfolioName := strings.TrimSpace(analysis.Portfolio)
 		chartEngine := normalizeChartEngine(r.FormValue("chart"))
-		result, analysisErr := computeAnalysisResult(analysis)
+		inputs := parseMappingRows(r.Form)
+		result, analysisErr := computeAnalysisResultWithInputs(analysis, inputs)
 		if analysisErr != nil {
 			vm, err := buildPortfolioMergeViewModel(portfolioName, analysis, result, "", chartEngine, buildBaseQuery(portfolioName))
 			if err != nil {
 				vm.ErrorMessage = err.Error()
 			} else {
 				vm.ErrorMessage = analysisErr.Error()
+			}
+			if len(inputs) > 0 {
+				vm.Rows = mappingInputsToView(inputs)
 			}
 			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
 			return
@@ -657,6 +661,9 @@ func main() {
 				vm.ErrorMessage = err.Error()
 			} else {
 				vm.ErrorMessage = analysisError
+			}
+			if len(inputs) > 0 {
+				vm.Rows = mappingInputsToView(inputs)
 			}
 			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
 			return
@@ -1367,10 +1374,74 @@ func parseAnalysisState(form url.Values) AnalysisState {
 
 func computeAnalysisResult(state AnalysisState) (*AnalysisResult, error) {
 	portfolioName := strings.TrimSpace(state.Portfolio)
-	if portfolioName == "" {
-		return nil, fmt.Errorf("Portfolio is required.")
+	var savedPortfolio *trades.Portfolio
+	if portfolioName != "" {
+		loaded, err := trades.LoadPortfolioByName(portfolioName)
+		if err != nil {
+			return nil, err
+		}
+		if loaded == nil {
+			return nil, fmt.Errorf("Portfolio not found: %s", portfolioName)
+		}
+		savedPortfolio = loaded
 	}
 
+	strategies, err := trades.ListStrategies(trades.DefaultStore())
+	if err != nil {
+		return nil, err
+	}
+	mapByKey := buildPortfolioMappingMap(strategies, savedPortfolio)
+	return computeAnalysisResultWithMappingMap(state, mapByKey)
+}
+
+func computeAnalysisResultWithInputs(state AnalysisState, inputs []trades.MappingInput) (*AnalysisResult, error) {
+	strategies, err := trades.ListStrategies(trades.DefaultStore())
+	if err != nil {
+		return nil, err
+	}
+	if len(inputs) == 0 {
+		mapByKey := buildPortfolioMappingMap(strategies, nil)
+		return computeAnalysisResultWithMappingMap(state, mapByKey)
+	}
+
+	mapByKey := make(map[string]trades.PortfolioMapping)
+	for _, input := range inputs {
+		key := strings.ToLower(strings.TrimSpace(input.StrategyKey))
+		if key == "" {
+			continue
+		}
+		mapByKey[key] = trades.PortfolioMapping{
+			Strategy:    strings.TrimSpace(input.StrategyKey),
+			Enabled:     input.Enabled,
+			Weight:      input.Weight,
+			RatioMode:   input.RatioMode,
+			RatioUnit:   input.RatioUnit,
+			RatioAmount: input.RatioAmount,
+			Notes:       input.Notes,
+		}
+	}
+	for _, strategy := range strategies {
+		key := strings.ToLower(strings.TrimSpace(strategy))
+		if key == "" {
+			continue
+		}
+		if _, ok := mapByKey[key]; !ok {
+			mapByKey[key] = trades.PortfolioMapping{
+				Strategy:    strings.TrimSpace(strategy),
+				Enabled:     true,
+				Weight:      1.0,
+				RatioMode:   false,
+				RatioUnit:   1.0,
+				RatioAmount: 10000,
+				Notes:       "",
+			}
+		}
+	}
+
+	return computeAnalysisResultWithMappingMap(state, mapByKey)
+}
+
+func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[string]trades.PortfolioMapping) (*AnalysisResult, error) {
 	start, end, label := resolveAnalysisRange(state)
 	tradesList, err := trades.DefaultStore().Load()
 	if err != nil {
@@ -1381,18 +1452,6 @@ func computeAnalysisResult(state AnalysisState) (*AnalysisResult, error) {
 	if strings.TrimSpace(state.Balance) != "" {
 		if v, err := strconv.ParseFloat(strings.TrimSpace(state.Balance), 64); err == nil {
 			startingCapital = v
-		}
-	}
-
-	mappings, err := trades.ListMappings(portfolioName)
-	if err != nil {
-		return nil, err
-	}
-	mapByKey := make(map[string]trades.StrategyPortfolioMapping)
-	for _, m := range mappings {
-		key := strings.ToLower(strings.TrimSpace(m.StrategyKey))
-		if key != "" {
-			mapByKey[key] = m
 		}
 	}
 
@@ -1407,9 +1466,6 @@ func computeAnalysisResult(state AnalysisState) (*AnalysisResult, error) {
 	minExit := (*time.Time)(nil)
 	maxExit := (*time.Time)(nil)
 	for _, t := range tradesList {
-		if !strings.EqualFold(strings.TrimSpace(t.Portfolio), portfolioName) {
-			continue
-		}
 		if start != nil && t.ExitDatetime.Before(*start) {
 			continue
 		}
@@ -1426,7 +1482,7 @@ func computeAnalysisResult(state AnalysisState) (*AnalysisResult, error) {
 			maxExit = &max
 		}
 
-		multiplier, ok := mappingMultiplier(mapByKey, t.Strategy, startingCapital)
+		multiplier, ok := portfolioMultiplier(mapByKey, t.Strategy, startingCapital)
 		if !ok {
 			continue
 		}
@@ -1531,7 +1587,7 @@ func computeAnalysisResult(state AnalysisState) (*AnalysisResult, error) {
 	}
 
 	return &AnalysisResult{
-		Portfolio:       portfolioName,
+		Portfolio:       buildPortfolioLabel(state),
 		TradeCount:      len(filtered),
 		StartingCapital: startingCapital,
 		EndingCapital:   result.EndingCapital,
