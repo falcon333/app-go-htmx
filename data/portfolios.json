@@ -1,0 +1,106 @@
+[
+  {
+    "name": "Core Portfolio_1Systems_03-13-2000-01-18-2026",
+    "base_name": "Core Portfolio",
+    "created_at": "2026-01-25T21:38:25.7651897Z",
+    "updated_at": "2026-01-25T21:38:25.7651897Z",
+    "filters": {
+      "from": "2000-03-13",
+      "to": "2026-01-18",
+      "balance": 0,
+      "range_mode": "ALL"
+    },
+    "mappings": [
+      {
+        "strategy": "RSI-X-MES1!-30",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": "Auto-added"
+      }
+    ],
+    "meta": {
+      "strategy_count": 1
+    }
+  },
+  {
+    "name": "Core Portfolio_1Systems_01-25-2025-01-25-2026",
+    "base_name": "Core Portfolio",
+    "created_at": "2026-01-25T21:38:43.8873225Z",
+    "updated_at": "2026-01-25T21:38:43.8873225Z",
+    "filters": {
+      "from": "2025-01-25",
+      "to": "2026-01-25",
+      "balance": 100000,
+      "range_mode": "CUSTOM"
+    },
+    "mappings": [
+      {
+        "strategy": "RSI-X-MES1!-30",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": "Auto-added"
+      }
+    ],
+    "meta": {
+      "strategy_count": 1
+    }
+  },
+  {
+    "name": "Core Portfolio_1Systems_01-25-2021-01-25-2026",
+    "base_name": "Core Portfolio",
+    "created_at": "2026-01-25T21:40:18.9037314Z",
+    "updated_at": "2026-01-25T21:40:18.9037314Z",
+    "filters": {
+      "from": "2021-01-25",
+      "to": "2026-01-25",
+      "balance": 100000,
+      "range_mode": "CUSTOM"
+    },
+    "mappings": [
+      {
+        "strategy": "RSI-X-MES1!-30",
+        "enabled": true,
+        "weight": 5,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": "Auto-added"
+      }
+    ],
+    "meta": {
+      "strategy_count": 1
+    }
+  },
+  {
+    "name": "Core Portfolio_1Systems_01-25-2025-01-25-2026_01-25-2026-13-55",
+    "base_name": "Core Portfolio",
+    "created_at": "2026-01-25T21:55:02.4654411Z",
+    "updated_at": "2026-01-25T21:55:02.4654411Z",
+    "filters": {
+      "from": "2025-01-25",
+      "to": "2026-01-25",
+      "balance": 100000,
+      "range_mode": "CUSTOM"
+    },
+    "mappings": [
+      {
+        "strategy": "RSI-X-MES1!-30",
+        "enabled": true,
+        "weight": 5,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": "Auto-added"
+      }
+    ],
+    "meta": {
+      "strategy_count": 1
+    }
+  }
+]

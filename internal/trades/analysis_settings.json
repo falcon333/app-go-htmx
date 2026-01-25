@@ -20,5 +20,38 @@
     "end_date": "",
     "balance": "100000",
     "updated_at": "2026-01-25T20:12:21.9391549Z"
+  },
+  {
+    "portfolio": "Core Portfolio_1Systems_03-13-2000-01-18-2026",
+    "range_quick": "1Y",
+    "auto_refresh": false,
+    "n": "",
+    "unit": "Years",
+    "start_date": "2025-01-25",
+    "end_date": "2026-01-25",
+    "balance": "100000",
+    "updated_at": "2026-01-25T21:38:37.4635844Z"
+  },
+  {
+    "portfolio": "Core Portfolio_1Systems_01-25-2025-01-25-2026",
+    "range_quick": "",
+    "auto_refresh": false,
+    "n": "",
+    "unit": "Years",
+    "start_date": "2025-01-25",
+    "end_date": "2026-01-25",
+    "balance": "100000",
+    "updated_at": "2026-01-25T21:39:45.7506969Z"
+  },
+  {
+    "portfolio": "Core Portfolio_1Systems_01-25-2021-01-25-2026",
+    "range_quick": "",
+    "auto_refresh": false,
+    "n": "",
+    "unit": "Years",
+    "start_date": "2021-01-25",
+    "end_date": "2026-01-25",
+    "balance": "100000",
+    "updated_at": "2026-01-25T21:54:43.1329106Z"
   }
 ]
