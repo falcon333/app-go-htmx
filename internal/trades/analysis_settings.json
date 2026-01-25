@@ -12,13 +12,13 @@
   },
   {
     "portfolio": "Core Portfolio",
-    "range_quick": "5Y",
+    "range_quick": "ALL",
     "auto_refresh": false,
     "n": "",
     "unit": "Years",
-    "start_date": "2021-01-25",
-    "end_date": "2026-01-25",
+    "start_date": "",
+    "end_date": "",
     "balance": "100000",
-    "updated_at": "2026-01-25T19:16:09.6164129Z"
+    "updated_at": "2026-01-25T20:12:21.9391549Z"
   }
 ]

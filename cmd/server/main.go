@@ -475,7 +475,6 @@ func main() {
 					continue
 				}
 
-				summary.Errors = rowErrors
 				summary.Skipped = len(rowErrors) + filtered
 				result.Status = "OK"
 				result.Imported = summary.Imported
@@ -541,7 +540,6 @@ func main() {
 				continue
 			}
 
-			summary.Errors = rowErrors
 			summary.Skipped = len(rowErrors) + filtered
 			result.Status = "OK"
 			result.Imported = summary.Imported
@@ -573,6 +571,11 @@ func main() {
 			chartEngine := normalizeChartEngine(r.URL.Query().Get("chart"))
 			analysis := loadAnalysisState(portfolioName)
 			result := (*AnalysisResult)(nil)
+			if strings.TrimSpace(analysis.Portfolio) != "" && (analysis.AutoRefresh || r.URL.Query().Has("chart")) {
+				if computed, err := computeAnalysisResult(analysis); err == nil {
+					result = computed
+				}
+			}
 			vm, err := buildPortfolioMergeViewModel(portfolioName, analysis, result, "", chartEngine, r.URL.Query())
 			if err != nil {
 				vm.ErrorMessage = err.Error()

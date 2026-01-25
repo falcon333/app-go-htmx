@@ -204,9 +204,19 @@
 
         <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
             <div class="font-medium text-gray-800">Charts</div>
-            <div class="mt-2 inline-flex rounded border border-gray-200 bg-gray-50 p-1 text-xs">
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+                <div class="inline-flex rounded border border-gray-200 bg-gray-50 p-1 text-xs">
                 <a href="{{ .ChartLinkJS }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "chartjs" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">chartjs</a>
                 <a href="{{ .ChartLinkTV }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "tv" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">tv</a>
+                </div>
+                <label class="ml-auto inline-flex items-center gap-2 text-xs text-gray-600">
+                    <span>Drawdown % baseline</span>
+                    <select id="ddpct-baseline" class="rounded border border-gray-200 bg-white px-2 py-1 text-xs">
+                        <option value="analysis">Balance (Analysis Balance)</option>
+                        <option value="balance">Balance (0)</option>
+                        <option value="zero">Zero (abs)</option>
+                    </select>
+                </label>
             </div>
 
             {{ if .HasChartData }}
@@ -416,12 +426,41 @@
             return;
         }
 
+        const baselineSelect = document.getElementById("ddpct-baseline");
+        const baselineKey = "ddPctBaseline";
+        const normalizeBaseline = (value) => (value === "zero" || value === "analysis" ? value : "balance");
+        const storedRaw = window.localStorage.getItem(baselineKey);
+        const storedBaseline = storedRaw ? normalizeBaseline(storedRaw) : "analysis";
+        if (baselineSelect) {
+            baselineSelect.value = storedBaseline;
+            window.localStorage.setItem(baselineKey, storedBaseline);
+        }
+
         let data = null;
         try {
             data = JSON.parse(dataEl.textContent);
         } catch (e) {
             return;
         }
+
+        const getAnalysisBalance = () => {
+            const input = document.querySelector("input[name='analysis_balance']");
+            if (!input) return 0;
+            const parsed = Number.parseFloat(String(input.value || "").trim());
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+        };
+
+        const mapDdPct = (mode) => {
+            if (mode === "zero") {
+                return data.ddPct.map((value) => Math.abs(value));
+            }
+            if (mode === "analysis") {
+                const balance = getAnalysisBalance();
+                if (!balance) return data.ddPct;
+                return data.ddAmt.map((value) => (value / balance) * 100);
+            }
+            return data.ddPct;
+        };
 
         const fmtCurrency = new Intl.NumberFormat(undefined, {
             style: "currency",
@@ -484,15 +523,17 @@
         }
 
         const ddPctCtx = document.getElementById("ddPctChart");
+        let ddPctChart = null;
         if (ddPctCtx) {
-            new Chart(ddPctCtx, {
+            const mode = normalizeBaseline(baselineSelect ? baselineSelect.value : "balance");
+            ddPctChart = new Chart(ddPctCtx, {
                 type: "line",
                 data: {
                     labels: data.labels,
                     datasets: [
                         {
                             label: "Drawdown (%)",
-                            data: data.ddPct,
+                            data: mapDdPct(mode),
                             borderColor: "rgba(239, 68, 68, 0.9)",
                             backgroundColor: "rgba(239, 68, 68, 0.2)",
                             fill: true,
@@ -507,9 +548,44 @@
                         y: {
                             ticks: {
                                 callback: value => fmtPercent.format(value / 100)
-                            }
+                            },
+                            ...(mode === "zero" ? { beginAtZero: true } : { suggestedMax: 0 })
                         }
                     }
+                }
+            });
+        }
+
+        const refreshDdPctChart = (mode) => {
+            if (!ddPctChart) return;
+            ddPctChart.data.datasets[0].data = mapDdPct(mode);
+            ddPctChart.options.scales.y = {
+                ticks: { callback: value => fmtPercent.format(value / 100) },
+                ...(mode === "zero" ? { beginAtZero: true } : { suggestedMax: 0 })
+            };
+            ddPctChart.update();
+        };
+
+        if (baselineSelect) {
+            baselineSelect.addEventListener("change", () => {
+                const mode = normalizeBaseline(baselineSelect.value);
+                window.localStorage.setItem(baselineKey, mode);
+                refreshDdPctChart(mode);
+            });
+        }
+
+        const analysisBalanceInput = document.querySelector("input[name='analysis_balance']");
+        if (analysisBalanceInput) {
+            analysisBalanceInput.addEventListener("change", () => {
+                const mode = normalizeBaseline(baselineSelect ? baselineSelect.value : "analysis");
+                if (mode === "analysis") {
+                    refreshDdPctChart(mode);
+                }
+            });
+            analysisBalanceInput.addEventListener("input", () => {
+                const mode = normalizeBaseline(baselineSelect ? baselineSelect.value : "analysis");
+                if (mode === "analysis") {
+                    refreshDdPctChart(mode);
                 }
             });
         }
@@ -559,12 +635,43 @@
             return;
         }
 
+        const baselineSelect = document.getElementById("ddpct-baseline");
+        const baselineKey = "ddPctBaseline";
+        const normalizeBaseline = (value) => (value === "zero" || value === "analysis" ? value : "balance");
+        const storedRaw = window.localStorage.getItem(baselineKey);
+        const storedBaseline = storedRaw ? normalizeBaseline(storedRaw) : "analysis";
+        if (baselineSelect) {
+            baselineSelect.value = storedBaseline;
+            window.localStorage.setItem(baselineKey, storedBaseline);
+        }
+
         let data = null;
         try {
             data = JSON.parse(dataEl.textContent);
         } catch (e) {
             return;
         }
+
+        const getAnalysisBalance = () => {
+            const input = document.querySelector("input[name='analysis_balance']");
+            if (!input) return 0;
+            const parsed = Number.parseFloat(String(input.value || "").trim());
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+        };
+
+        const mapDdPct = (mode) =>
+            data.labels.map((label, i) => {
+                let value = data.ddPct[i];
+                if (mode === "zero") {
+                    value = Math.abs(value);
+                } else if (mode === "analysis") {
+                    const balance = getAnalysisBalance();
+                    if (balance) {
+                        value = (data.ddAmt[i] / balance) * 100;
+                    }
+                }
+                return { time: toTs(label), value };
+            });
 
         const toTs = (label) => {
             const iso = String(label || "").replace(" ", "T") + ":00";
@@ -592,13 +699,15 @@
         }
 
         const ddPctChart = makeChart("tv-ddpct");
+        let ddPctSeries = null;
         if (ddPctChart) {
-            const ddPctSeries = ddPctChart.addAreaSeries({
+            const mode = normalizeBaseline(baselineSelect ? baselineSelect.value : "balance");
+            ddPctSeries = ddPctChart.addAreaSeries({
                 lineColor: "rgba(239, 68, 68, 0.9)",
                 topColor: "rgba(239, 68, 68, 0.2)",
                 bottomColor: "rgba(239, 68, 68, 0.05)"
             });
-            ddPctSeries.setData(data.labels.map((label, i) => ({ time: toTs(label), value: data.ddPct[i] })));
+            ddPctSeries.setData(mapDdPct(mode));
         }
 
         const ddAmtChart = makeChart("tv-ddamt");
@@ -609,6 +718,35 @@
                 bottomColor: "rgba(245, 158, 11, 0.05)"
             });
             ddAmtSeries.setData(data.labels.map((label, i) => ({ time: toTs(label), value: data.ddAmt[i] })));
+        }
+
+        const refreshDdPctSeries = (mode) => {
+            if (!ddPctSeries) return;
+            ddPctSeries.setData(mapDdPct(mode));
+        };
+
+        if (baselineSelect) {
+            baselineSelect.addEventListener("change", () => {
+                const mode = normalizeBaseline(baselineSelect.value);
+                window.localStorage.setItem(baselineKey, mode);
+                refreshDdPctSeries(mode);
+            });
+        }
+
+        const analysisBalanceInput = document.querySelector("input[name='analysis_balance']");
+        if (analysisBalanceInput) {
+            analysisBalanceInput.addEventListener("change", () => {
+                const mode = normalizeBaseline(baselineSelect ? baselineSelect.value : "analysis");
+                if (mode === "analysis") {
+                    refreshDdPctSeries(mode);
+                }
+            });
+            analysisBalanceInput.addEventListener("input", () => {
+                const mode = normalizeBaseline(baselineSelect ? baselineSelect.value : "analysis");
+                if (mode === "analysis") {
+                    refreshDdPctSeries(mode);
+                }
+            });
         }
     });
 </script>
