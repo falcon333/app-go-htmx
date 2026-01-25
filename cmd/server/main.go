@@ -92,16 +92,26 @@ type MappingRowView struct {
 	Notes       string
 }
 
+type PortfolioListItem struct {
+	Name          string
+	BaseName      string
+	StrategyCount int
+	DateRange     string
+}
+
 type PortfolioMergeViewModel struct {
-	PortfolioName  string
-	Portfolios     []string
-	Rows           []MappingRowView
-	SuccessMessage string
-	ErrorMessage   string
-	ChartEngine    string
-	ChartLinkJS    string
-	ChartLinkTV    string
-	HasChartData   bool
+	PortfolioName     string
+	PortfolioSelected string
+	PortfolioItems    []PortfolioListItem
+	Rows              []MappingRowView
+	AutoAppendEnabled bool
+	FinalNamePreview  string
+	SuccessMessage    string
+	ErrorMessage      string
+	ChartEngine       string
+	ChartLinkJS       string
+	ChartLinkTV       string
+	HasChartData      bool
 
 	AnalysisRangeQuick  string
 	AnalysisAutoRefresh bool
@@ -1216,9 +1226,24 @@ func defaultBatchRows(count int) []BatchImportRow {
 }
 
 func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, result *AnalysisResult, successMessage string, chartEngine string, baseQuery url.Values) (PortfolioMergeViewModel, error) {
-	portfolios, err := trades.ListPortfoliosFromTrades(trades.DefaultStore())
+	portfolioName = strings.TrimSpace(portfolioName)
+	if portfolioName == "" && strings.TrimSpace(analysis.Portfolio) != "" {
+		portfolioName = strings.TrimSpace(analysis.Portfolio)
+	}
+
+	savedPortfolios, err := trades.ListSavedPortfolios()
 	if err != nil {
 		return PortfolioMergeViewModel{}, err
+	}
+
+	items := make([]PortfolioListItem, 0, len(savedPortfolios))
+	for _, p := range savedPortfolios {
+		items = append(items, PortfolioListItem{
+			Name:          p.Name,
+			BaseName:      p.BaseName,
+			StrategyCount: p.Meta.StrategyCount,
+			DateRange:     formatPortfolioDateRange(p.Filters.From, p.Filters.To),
+		})
 	}
 
 	strategies, err := trades.ListStrategies(trades.DefaultStore())
@@ -1226,50 +1251,16 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 		return PortfolioMergeViewModel{}, err
 	}
 
-	mappings, err := trades.ListMappings(portfolioName)
-	if err != nil {
-		return PortfolioMergeViewModel{}, err
+	var saved *trades.Portfolio
+	if portfolioName != "" {
+		if loaded, err := trades.LoadPortfolioByName(portfolioName); err != nil {
+			return PortfolioMergeViewModel{}, err
+		} else if loaded != nil {
+			saved = loaded
+		}
 	}
 
-	mapByKey := make(map[string]trades.StrategyPortfolioMapping)
-	for _, m := range mappings {
-		key := strings.ToLower(strings.TrimSpace(m.StrategyKey))
-		if key == "" {
-			continue
-		}
-		mapByKey[key] = m
-	}
-
-	rows := make([]MappingRowView, 0, len(strategies))
-	for _, strategy := range strategies {
-		key := strings.TrimSpace(strategy)
-		if key == "" {
-			continue
-		}
-
-		if existing, ok := mapByKey[strings.ToLower(key)]; ok {
-			rows = append(rows, MappingRowView{
-				StrategyKey: existing.StrategyKey,
-				Enabled:     existing.Enabled,
-				Weight:      existing.Weight,
-				RatioMode:   existing.RatioMode,
-				RatioUnit:   existing.RatioUnit,
-				RatioAmount: existing.RatioAmount,
-				Notes:       existing.Notes,
-			})
-			continue
-		}
-
-		rows = append(rows, MappingRowView{
-			StrategyKey: key,
-			Enabled:     true,
-			Weight:      1.0,
-			RatioMode:   false,
-			RatioUnit:   1.0,
-			RatioAmount: 10000,
-			Notes:       "Auto-added on import",
-		})
-	}
+	rows := buildMappingRows(strategies, saved)
 
 	chartEngine = normalizeChartEngine(chartEngine)
 	chartLinks := buildChartLinks(baseQuery)
@@ -1279,10 +1270,21 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 	}
 	hasChartData := len(chartData.Labels) > 0
 
+	baseName := portfolioName
+	if saved != nil && strings.TrimSpace(saved.BaseName) != "" {
+		baseName = saved.BaseName
+	}
+
+	start, end := resolveNameDates(analysis)
+	preview := buildPortfolioFinalName(baseName, countEnabled(rows), start, end, true, "")
+
 	return PortfolioMergeViewModel{
-		PortfolioName:       portfolioName,
-		Portfolios:          portfolios,
+		PortfolioName:       baseName,
+		PortfolioSelected:   portfolioName,
+		PortfolioItems:      items,
 		Rows:                rows,
+		AutoAppendEnabled:   true,
+		FinalNamePreview:    preview,
 		SuccessMessage:      successMessage,
 		AnalysisRangeQuick:  analysis.RangeQuick,
 		AnalysisAutoRefresh: analysis.AutoRefresh,
@@ -1693,6 +1695,321 @@ func mappingMultiplier(mapByKey map[string]trades.StrategyPortfolioMapping, stra
 	// Scale by capital per ratio amount: (capital / ratioAmount) * ratioUnit
 	ratioMultiplier := (startingCapital / ratioAmount) * ratioUnit
 	return weight * ratioMultiplier, true
+}
+
+func portfolioMultiplier(mapByKey map[string]trades.PortfolioMapping, strategy string, startingCapital float64) (float64, bool) {
+	key := strings.ToLower(strings.TrimSpace(strategy))
+	if key == "" {
+		return 0, false
+	}
+
+	mapping, ok := mapByKey[key]
+	if !ok {
+		return 1.0, true
+	}
+	if !mapping.Enabled {
+		return 0, false
+	}
+
+	weight := mapping.Weight
+	if weight == 0 {
+		weight = 1.0
+	}
+
+	if !mapping.RatioMode {
+		return weight, true
+	}
+
+	ratioAmount := mapping.RatioAmount
+	if ratioAmount <= 0 {
+		return weight, true
+	}
+	ratioUnit := mapping.RatioUnit
+	if ratioUnit == 0 {
+		ratioUnit = 1.0
+	}
+
+	ratioMultiplier := (startingCapital / ratioAmount) * ratioUnit
+	return weight * ratioMultiplier, true
+}
+
+func buildMappingRows(strategies []string, saved *trades.Portfolio) []MappingRowView {
+	mapByKey := make(map[string]trades.PortfolioMapping)
+	if saved != nil {
+		for _, m := range saved.Mappings {
+			key := strings.ToLower(strings.TrimSpace(m.Strategy))
+			if key != "" {
+				mapByKey[key] = m
+			}
+		}
+	}
+
+	rows := make([]MappingRowView, 0, len(strategies))
+	seen := make(map[string]struct{})
+	for _, strategy := range strategies {
+		key := strings.TrimSpace(strategy)
+		if key == "" {
+			continue
+		}
+		seen[strings.ToLower(key)] = struct{}{}
+
+		if existing, ok := mapByKey[strings.ToLower(key)]; ok {
+			rows = append(rows, MappingRowView{
+				StrategyKey: existing.Strategy,
+				Enabled:     existing.Enabled,
+				Weight:      existing.Weight,
+				RatioMode:   existing.RatioMode,
+				RatioUnit:   existing.RatioUnit,
+				RatioAmount: existing.RatioAmount,
+				Notes:       existing.Notes,
+			})
+			continue
+		}
+
+		rows = append(rows, MappingRowView{
+			StrategyKey: key,
+			Enabled:     true,
+			Weight:      1.0,
+			RatioMode:   false,
+			RatioUnit:   1.0,
+			RatioAmount: 10000,
+			Notes:       "Auto-added",
+		})
+	}
+
+	if saved != nil {
+		extra := make([]string, 0)
+		for _, m := range saved.Mappings {
+			key := strings.ToLower(strings.TrimSpace(m.Strategy))
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; !ok {
+				extra = append(extra, m.Strategy)
+			}
+		}
+		sort.Strings(extra)
+		for _, key := range extra {
+			m := mapByKey[strings.ToLower(strings.TrimSpace(key))]
+			rows = append(rows, MappingRowView{
+				StrategyKey: m.Strategy,
+				Enabled:     m.Enabled,
+				Weight:      m.Weight,
+				RatioMode:   m.RatioMode,
+				RatioUnit:   m.RatioUnit,
+				RatioAmount: m.RatioAmount,
+				Notes:       m.Notes,
+			})
+		}
+	}
+
+	return rows
+}
+
+func buildPortfolioMappingMap(strategies []string, saved *trades.Portfolio) map[string]trades.PortfolioMapping {
+	mapByKey := make(map[string]trades.PortfolioMapping)
+	if saved != nil {
+		for _, m := range saved.Mappings {
+			key := strings.ToLower(strings.TrimSpace(m.Strategy))
+			if key != "" {
+				mapByKey[key] = m
+			}
+		}
+	}
+
+	if saved == nil {
+		for _, strategy := range strategies {
+			key := strings.ToLower(strings.TrimSpace(strategy))
+			if key == "" {
+				continue
+			}
+			mapByKey[key] = trades.PortfolioMapping{
+				Strategy:    strings.TrimSpace(strategy),
+				Enabled:     true,
+				Weight:      1.0,
+				RatioMode:   false,
+				RatioUnit:   1.0,
+				RatioAmount: 10000,
+				Notes:       "Auto-added",
+			}
+		}
+	}
+
+	return mapByKey
+}
+
+func countEnabled(rows []MappingRowView) int {
+	count := 0
+	for _, row := range rows {
+		if row.Enabled {
+			count++
+		}
+	}
+	return count
+}
+
+func resolveNameDates(state AnalysisState) (*time.Time, *time.Time) {
+	start, end, _ := resolveAnalysisRange(state)
+	if start != nil || end != nil {
+		return start, end
+	}
+
+	tradesList, err := trades.DefaultStore().Load()
+	if err != nil {
+		return start, end
+	}
+	for _, t := range tradesList {
+		if t.ExitDatetime.IsZero() {
+			continue
+		}
+		if start == nil || t.ExitDatetime.Before(*start) {
+			value := t.ExitDatetime.UTC()
+			start = &value
+		}
+		if end == nil || t.ExitDatetime.After(*end) {
+			value := t.ExitDatetime.UTC()
+			end = &value
+		}
+	}
+
+	return start, end
+}
+
+func buildPortfolioFinalName(baseName string, enabledCount int, from, to *time.Time, autoAppend bool, timestamp string) string {
+	base := strings.TrimSpace(baseName)
+	if base == "" {
+		return ""
+	}
+	if !autoAppend {
+		return base
+	}
+
+	start := from
+	end := to
+	if start == nil || end == nil {
+		now := time.Now().UTC()
+		if start == nil {
+			start = &now
+		}
+		if end == nil {
+			end = &now
+		}
+	}
+
+	startStr := formatNameDate(*start)
+	endStr := formatNameDate(*end)
+
+	stamp := strings.TrimSpace(timestamp)
+	if stamp == "" {
+		stamp = formatNameDateTime(time.Now().Local())
+	} else if parsed, ok := parseNameDateTime(stamp); ok {
+		stamp = formatNameDateTime(parsed)
+	} else {
+		stamp = formatNameDateTime(time.Now().Local())
+	}
+
+	return fmt.Sprintf("%s_%dSystems_%s-%s_%s", base, enabledCount, startStr, endStr, stamp)
+}
+
+func formatNameDate(t time.Time) string {
+	return t.Format("01-02-2006")
+}
+
+func formatNameDateTime(t time.Time) string {
+	return t.Format("01-02-2006-15-04")
+}
+
+func parseNameDateTime(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.ParseInLocation("01-02-2006-15-04", value, time.Local)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
+}
+
+func formatPortfolioDateRange(from, to string) string {
+	fromFmt := formatNameDateString(from)
+	toFmt := formatNameDateString(to)
+	if fromFmt == "" && toFmt == "" {
+		return "ALL"
+	}
+	if fromFmt == "" {
+		return "- " + toFmt
+	}
+	if toFmt == "" {
+		return fromFmt + " -"
+	}
+	return fromFmt + " - " + toFmt
+}
+
+func formatNameDateString(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if t, err := time.Parse("2006-01-02", value); err == nil {
+		return formatNameDate(t)
+	}
+	return ""
+}
+
+func buildPortfolioLabel(state AnalysisState) string {
+	name := strings.TrimSpace(state.Portfolio)
+	if name != "" {
+		return name
+	}
+	return "All Strategies"
+}
+
+func applyPortfolioFilters(state AnalysisState, portfolio *trades.Portfolio) AnalysisState {
+	if portfolio == nil {
+		return state
+	}
+
+	state.Portfolio = portfolio.Name
+	if portfolio.Filters.Balance > 0 {
+		state.Balance = strconv.FormatFloat(portfolio.Filters.Balance, 'f', -1, 64)
+	}
+
+	mode := strings.TrimSpace(portfolio.Filters.RangeMode)
+	if strings.HasPrefix(strings.ToUpper(mode), "QUICK:") {
+		state.RangeQuick = strings.TrimPrefix(mode, "QUICK:")
+		state.StartDate = strings.TrimSpace(portfolio.Filters.From)
+		state.EndDate = strings.TrimSpace(portfolio.Filters.To)
+		return state
+	}
+
+	state.RangeQuick = ""
+	state.StartDate = strings.TrimSpace(portfolio.Filters.From)
+	state.EndDate = strings.TrimSpace(portfolio.Filters.To)
+	return state
+}
+
+func buildRangeMode(state AnalysisState) string {
+	if strings.TrimSpace(state.StartDate) != "" || strings.TrimSpace(state.EndDate) != "" {
+		return "CUSTOM"
+	}
+	if strings.TrimSpace(state.RangeQuick) != "" {
+		return "QUICK:" + strings.TrimSpace(state.RangeQuick)
+	}
+	if strings.TrimSpace(state.N) != "" {
+		unit := strings.TrimSpace(state.Unit)
+		if unit == "" {
+			unit = "Years"
+		}
+		return "ROLLING:" + unit
+	}
+	return "ALL"
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func sumProfitLoss(tradesList []portfolio.Trade) (float64, float64) {
