@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Batch Import Trades</title>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+    <!-- Tailwind (CDN for dev) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 text-gray-900">
+<main class="max-w-5xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">Batch Import Trades</h1>
+            <p class="text-sm text-gray-600 mt-1">Provide one strategy per URL. Strategy name required.</p>
+        </div>
+        <div class="space-x-3 text-sm">
+            <a class="text-blue-600 hover:underline" href="/imports/trades">Single import</a>
+            <a class="text-blue-600 hover:underline" href="/portfolios/merge?portfolio=Default">Portfolio merge</a>
+            <a class="text-blue-600 hover:underline" href="/portfolio">Back to portfolio</a>
+        </div>
+    </div>
+
+    <form class="bg-white rounded-lg shadow p-6" method="post" action="/import/batch" enctype="multipart/form-data">
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm border border-gray-200" id="batch-table">
+                <thead class="bg-gray-50">
+                <tr>
+                    <th class="border px-3 py-2 text-left">CSV URL *</th>
+                    <th class="border px-3 py-2 text-left">Strategy Name *</th>
+                    <th class="border px-3 py-2 text-left">Portfolio</th>
+                    <th class="border px-3 py-2 text-left">Timezone</th>
+                    <th class="border px-3 py-2 text-left">Start Date</th>
+                    <th class="border px-3 py-2 text-left">End Date</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{ range $i, $row := .Rows }}
+                <tr class="odd:bg-white even:bg-gray-50">
+                    <td class="border px-3 py-2">
+                        <input class="w-full rounded border px-2 py-1" type="url" name="rows[{{ $i }}].csv_url" value="{{ $row.CSVURL }}" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" required>
+                    </td>
+                    <td class="border px-3 py-2">
+                        <input class="w-full rounded border px-2 py-1" type="text" name="rows[{{ $i }}].strategy_name" value="{{ $row.Strategy }}" placeholder="RSI-MES1!-60" required>
+                    </td>
+                    <td class="border px-3 py-2">
+                        <input class="w-full rounded border px-2 py-1" type="text" name="rows[{{ $i }}].portfolio_name" value="{{ $row.Portfolio }}" placeholder="Core-Portfolio">
+                    </td>
+                    <td class="border px-3 py-2">
+                        <select class="w-full rounded border px-2 py-1" name="rows[{{ $i }}].timezone">
+                            {{ $tz := $row.Timezone }}
+                            <option value="America/Chicago" {{ if eq $tz "America/Chicago" }}selected{{ end }}>America/Chicago</option>
+                            <option value="America/New_York" {{ if eq $tz "America/New_York" }}selected{{ end }}>America/New_York</option>
+                            <option value="America/Los_Angeles" {{ if eq $tz "America/Los_Angeles" }}selected{{ end }}>America/Los_Angeles</option>
+                            <option value="Europe/London" {{ if eq $tz "Europe/London" }}selected{{ end }}>Europe/London</option>
+                            <option value="Europe/Berlin" {{ if eq $tz "Europe/Berlin" }}selected{{ end }}>Europe/Berlin</option>
+                            <option value="Asia/Tokyo" {{ if eq $tz "Asia/Tokyo" }}selected{{ end }}>Asia/Tokyo</option>
+                            <option value="Asia/Hong_Kong" {{ if eq $tz "Asia/Hong_Kong" }}selected{{ end }}>Asia/Hong_Kong</option>
+                            <option value="Asia/Singapore" {{ if eq $tz "Asia/Singapore" }}selected{{ end }}>Asia/Singapore</option>
+                            <option value="Australia/Sydney" {{ if eq $tz "Australia/Sydney" }}selected{{ end }}>Australia/Sydney</option>
+                            <option value="UTC" {{ if eq $tz "UTC" }}selected{{ end }}>UTC</option>
+                        </select>
+                    </td>
+                    <td class="border px-3 py-2">
+                        <input class="w-full rounded border px-2 py-1" type="date" name="rows[{{ $i }}].start_date" value="{{ $row.StartDate }}">
+                    </td>
+                    <td class="border px-3 py-2">
+                        <input class="w-full rounded border px-2 py-1" type="date" name="rows[{{ $i }}].end_date" value="{{ $row.EndDate }}">
+                    </td>
+                </tr>
+                {{ end }}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mt-4">
+            <label class="block text-sm font-medium mb-1">Or upload CSV/Excel (multiple files)</label>
+            <input
+                type="file"
+                name="upload_files"
+                multiple
+                accept=".csv,.xls,.xlsx"
+                class="w-full rounded border px-3 py-2 border-gray-300"
+            />
+            <p class="text-xs text-gray-500 mt-1">You can select multiple files at once.</p>
+        </div>
+
+        <div class="flex items-center justify-between mt-4">
+            <button type="button" class="text-sm text-blue-600 hover:underline" onclick="addBatchRow()">Add row</button>
+            <button type="submit" class="inline-flex items-center rounded px-5 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700">Run Batch Import</button>
+        </div>
+    </form>
+
+    <div class="mt-6">
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold mb-4">Results</h2>
+            {{ if .FileSummary }}
+                <div class="mb-3 text-sm text-gray-700">{{ .FileSummary }}</div>
+            {{ end }}
+            {{ if .Results }}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm border border-gray-200">
+                    <thead class="bg-gray-50">
+                    <tr>
+                        <th class="border px-3 py-2 text-left">Row #</th>
+                        <th class="border px-3 py-2 text-left">Strategy</th>
+                        <th class="border px-3 py-2 text-left">Portfolio</th>
+                        <th class="border px-3 py-2 text-left">URL</th>
+                        <th class="border px-3 py-2 text-left">Status</th>
+                        <th class="border px-3 py-2 text-left">Imported</th>
+                        <th class="border px-3 py-2 text-left">Duplicates</th>
+                        <th class="border px-3 py-2 text-left">Skipped</th>
+                        <th class="border px-3 py-2 text-left">Message</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{ range .Results }}
+                    <tr class="odd:bg-white even:bg-gray-50">
+                        <td class="border px-3 py-2">{{ .Row }}</td>
+                        <td class="border px-3 py-2">{{ .Strategy }}</td>
+                        <td class="border px-3 py-2">{{ .Portfolio }}</td>
+                        <td class="border px-3 py-2 truncate max-w-xs">{{ .CSVURL }}</td>
+                        <td class="border px-3 py-2 {{ if eq .Status "OK" }}text-green-700{{ else }}text-red-600{{ end }}">{{ .Status }}</td>
+                        <td class="border px-3 py-2">{{ .Imported }}</td>
+                        <td class="border px-3 py-2">{{ .Duplicates }}</td>
+                        <td class="border px-3 py-2">{{ .Skipped }}</td>
+                        <td class="border px-3 py-2">
+                            <div>{{ .Error }}</div>
+                            {{ if .RowErrors }}
+                            <details class="mt-2 text-xs text-gray-600">
+                                <summary class="cursor-pointer">View row errors ({{ len .RowErrors }})</summary>
+                                <ul class="mt-2 list-disc pl-5 space-y-1 max-h-40 overflow-auto">
+                                    {{ range .RowErrors }}
+                                        <li>Row {{ .Row }}: {{ .Message }}</li>
+                                    {{ end }}
+                                </ul>
+                            </details>
+                            {{ end }}
+                        </td>
+                    </tr>
+                    {{ end }}
+                    </tbody>
+                </table>
+            </div>
+            {{ else }}
+            <p class="text-sm text-gray-500">Run the batch import to see per-row results.</p>
+            {{ end }}
+        </div>
+    </div>
+</main>
+
+<script>
+    function addBatchRow() {
+        const table = document.getElementById("batch-table").getElementsByTagName("tbody")[0];
+        const index = table.rows.length;
+        const row = table.insertRow(-1);
+        row.className = index % 2 === 0 ? "odd:bg-white even:bg-gray-50" : "odd:bg-white even:bg-gray-50";
+
+        row.innerHTML = `
+            <td class="border px-3 py-2">
+                <input class="w-full rounded border px-2 py-1" type="url" name="rows[${index}].csv_url" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" required>
+            </td>
+            <td class="border px-3 py-2">
+                <input class="w-full rounded border px-2 py-1" type="text" name="rows[${index}].strategy_name" placeholder="RSI-MES1!-60" required>
+            </td>
+            <td class="border px-3 py-2">
+                <input class="w-full rounded border px-2 py-1" type="text" name="rows[${index}].portfolio_name" placeholder="Core-Portfolio">
+            </td>
+            <td class="border px-3 py-2">
+                <select class="w-full rounded border px-2 py-1" name="rows[${index}].timezone">
+                    <option value="America/Chicago" selected>America/Chicago</option>
+                    <option value="America/New_York">America/New_York</option>
+                    <option value="America/Los_Angeles">America/Los_Angeles</option>
+                    <option value="Europe/London">Europe/London</option>
+                    <option value="Europe/Berlin">Europe/Berlin</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo</option>
+                    <option value="Asia/Hong_Kong">Asia/Hong_Kong</option>
+                    <option value="Asia/Singapore">Asia/Singapore</option>
+                    <option value="Australia/Sydney">Australia/Sydney</option>
+                    <option value="UTC">UTC</option>
+                </select>
+            </td>
+            <td class="border px-3 py-2">
+                <input class="w-full rounded border px-2 py-1" type="date" name="rows[${index}].start_date">
+            </td>
+            <td class="border px-3 py-2">
+                <input class="w-full rounded border px-2 py-1" type="date" name="rows[${index}].end_date">
+            </td>
+        `;
+    }
+</script>
+</body>
+</html>

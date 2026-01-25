@@ -1,0 +1,26 @@
+[
+  {
+    "id": "default|rsi-x-mes1!-30",
+    "strategy_key": "RSI-X-MES1!-30",
+    "portfolio_name": "Default",
+    "enabled": true,
+    "weight": 1,
+    "ratio_mode": false,
+    "ratio_unit": 1,
+    "ratio_amount": 10000,
+    "notes": "Auto-added on import",
+    "updated_at": "2026-01-25T05:13:15.1363775Z"
+  },
+  {
+    "id": "core portfolio|rsi-x-mes1!-30",
+    "strategy_key": "RSI-X-MES1!-30",
+    "portfolio_name": "Core Portfolio",
+    "enabled": true,
+    "weight": 1,
+    "ratio_mode": false,
+    "ratio_unit": 1,
+    "ratio_amount": 10000,
+    "notes": "Auto-added on import",
+    "updated_at": "2026-01-25T19:08:28.5854677Z"
+  }
+]

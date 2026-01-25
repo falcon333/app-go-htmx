@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Portfolio</title>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+    <!-- Tailwind (CDN for dev) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="bg-gray-100 text-gray-900">
+<main class="max-w-3xl mx-auto p-6">
+    <h1 class="text-3xl font-bold mb-6">Portfolio</h1>
+
+    <!-- ================================================= -->
+    <!-- Form (NEVER swapped) -->
+    <!-- ================================================= -->
+    <form
+        class="bg-white rounded-lg shadow p-6 space-y-6"
+        hx-post="/portfolio"
+        hx-target="#portfolio"
+        hx-swap="outerHTML"
+    >
+        <!-- Starting Capital -->
+        <div>
+            <label class="block font-medium mb-1">Starting Capital</label>
+
+            <div class="relative">
+                <input
+                    type="number"
+                    name="starting_capital"
+                    step="any"
+                    value="{{ .StartingCapital }}"
+                    required
+
+                    hx-post="/portfolio/validate/starting-capital"
+                    hx-trigger="changed delay:300ms"
+                    hx-target="#starting-capital-feedback"
+                    hx-swap="innerHTML"
+
+                    class="w-full rounded border px-3 py-2 pr-10
+                        {{ if index .FieldErrors "starting_capital" }}
+                            border-red-500
+                        {{ else if .StartingCapital }}
+                            border-green-500
+                        {{ else }}
+                            border-gray-300
+                        {{ end }}"
+                />
+
+                {{ if and (not (index .FieldErrors "starting_capital")) .StartingCapital }}
+                <span class="absolute inset-y-0 right-3 flex items-center text-green-600 transition-opacity duration-200">
+                    ✓
+                </span>
+                {{ end }}
+            </div>
+
+            <div class="mt-1 min-h-[1.25rem] text-sm text-red-600" id="starting-capital-feedback">
+                {{ with index .FieldErrors "starting_capital" }}{{ . }}{{ end }}
+            </div>
+        </div>
+
+        <!-- Trade PnLs -->
+        <div>
+            <label class="block font-medium mb-1">
+                Trade PnLs (comma separated)
+            </label>
+
+            <div class="relative">
+                <input
+                    type="text"
+                    name="trade_pnls"
+                    value="{{ .TradePnLs }}"
+                    required
+
+                    hx-post="/portfolio/validate/trade-pnls"
+                    hx-trigger="changed delay:300ms"
+                    hx-target="#trade-pnls-feedback"
+                    hx-swap="innerHTML"
+
+                    class="w-full rounded border px-3 py-2 pr-10
+                        {{ if index .FieldErrors "trade_pnls" }}
+                            border-red-500
+                        {{ else if .TradePnLs }}
+                            border-green-500
+                        {{ else }}
+                            border-gray-300
+                        {{ end }}"
+                />
+
+                {{ if and (not (index .FieldErrors "trade_pnls")) .TradePnLs }}
+                <span class="absolute inset-y-0 right-3 flex items-center text-green-600 transition-opacity duration-200">
+                    ✓
+                </span>
+                {{ end }}
+            </div>
+
+            <div class="mt-1 min-h-[1.25rem] text-sm text-red-600" id="trade-pnls-feedback">
+                {{ with index .FieldErrors "trade_pnls" }}{{ . }}{{ end }}
+            </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="flex justify-end">
+            <button
+                type="submit"
+                {{ if not .CanSubmit }}disabled{{ end }}
+                class="inline-flex items-center rounded px-5 py-2 font-medium text-white
+                    {{ if .CanSubmit }}
+                        bg-green-600 hover:bg-green-700
+                    {{ else }}
+                        bg-gray-400 cursor-not-allowed
+                    {{ end }}"
+            >
+                Recompute
+            </button>
+        </div>
+    </form>
+
+    <!-- ================================================= -->
+    <!-- Results (THIS gets swapped) -->
+    <!-- ================================================= -->
+    <div class="mt-8">
+        {{ template "portfolio-content" . }}
+    </div>
+</main>
+</body>
+</html>
+
+{{/* ===================================================== */}}
+{{/* Results partial (HTMX swap target) */}}
+{{/* ===================================================== */}}
+{{ define "portfolio-content" }}
+<div id="portfolio" class="bg-white rounded-lg shadow p-6">
+
+    <h2 class="text-xl font-semibold mb-4">Summary</h2>
+
+    <ul class="grid grid-cols-2 gap-y-2 text-sm mb-6">
+        <li><span class="font-medium">Starting Capital:</span> {{ .StartingCapital }}</li>
+        <li><span class="font-medium">Ending Capital:</span> {{ .EndingCapital }}</li>
+        <li><span class="font-medium">Total PnL:</span> {{ .TotalNetPnL }}</li>
+        <li><span class="font-medium">Max Drawdown:</span> {{ .MaxDrawdown }}</li>
+    </ul>
+
+    <h2 class="text-xl font-semibold mb-4">Equity & Drawdown</h2>
+
+    <!-- Chart -->
+    <div class="mb-6">
+        <canvas id="equityChart" height="120"></canvas>
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-x-auto">
+        <table class="min-w-full border border-gray-200 text-sm">
+            <thead class="bg-gray-50">
+            <tr>
+                <th class="border px-3 py-2 text-left">#</th>
+                <th class="border px-3 py-2 text-left">Equity</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{ range $i, $p := .EquityCurve }}
+            <tr class="odd:bg-white even:bg-gray-50">
+                <td class="border px-3 py-2">{{ $i }}</td>
+                <td class="border px-3 py-2">{{ $p.Equity }}</td>
+            </tr>
+            {{ end }}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Chart script -->
+    <script>
+        (function () {
+            const ctx = document.getElementById("equityChart");
+            if (!ctx) return;
+
+            const equity = [
+                {{ range .EquityCurve }}{{ .Equity }},{{ end }}
+            ];
+
+            let peak = equity[0] ?? 0;
+            const drawdown = equity.map(v => {
+                peak = Math.max(peak, v);
+                return v - peak;
+            });
+
+            const labels = [
+                {{ range $i, $_ := .EquityCurve }}"{{ $i }}",{{ end }}
+            ];
+
+            new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: "Equity",
+                            data: equity,
+                            borderColor: "#2563eb",
+                            backgroundColor: "rgba(37,99,235,0.1)",
+                            fill: true,
+                            tension: 0.3,
+                            yAxisID: "y"
+                        },
+                        {
+                            label: "Drawdown",
+                            data: drawdown,
+                            borderColor: "#dc2626",
+                            backgroundColor: "rgba(220,38,38,0.15)",
+                            fill: true,
+                            tension: 0.3,
+                            yAxisID: "y1"
+                        }
+                    ]
+                },
+                options: {
+                    plugins: {
+                        legend: {
+                            labels: { usePointStyle: true }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ctx.dataset.label + ": " + ctx.parsed.y.toLocaleString()
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: "Trade #" }
+                        },
+                        y: {
+                            title: { display: true, text: "Equity" }
+                        },
+                        y1: {
+                            position: "right",
+                            title: { display: true, text: "Drawdown" },
+                            grid: {
+                                drawOnChartArea: false,
+                                color: ctx =>
+                                    ctx.tick.value === 0 ? "#000000" : "#e5e7eb"
+                            }
+                        }
+                    }
+                }
+            });
+        })();
+    </script>
+
+</div>
+{{ end }}

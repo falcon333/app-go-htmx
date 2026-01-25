@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Trade Import</title>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+    <!-- Tailwind (CDN for dev) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 text-gray-900">
+<main class="max-w-3xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-3xl font-bold">Trade Import</h1>
+        <div class="space-x-3 text-sm">
+            <a class="text-blue-600 hover:underline" href="/import/batch">Batch import</a>
+            <a class="text-blue-600 hover:underline" href="/portfolios/merge?portfolio=Default">Portfolio merge</a>
+            <a class="text-blue-600 hover:underline" href="/portfolio">Back to portfolio</a>
+        </div>
+    </div>
+
+    <form
+        class="bg-white rounded-lg shadow p-6 space-y-6"
+        hx-post="/imports/trades"
+        hx-target="#import-result"
+        hx-swap="innerHTML"
+        enctype="multipart/form-data"
+    >
+        <div>
+            <label class="block font-medium mb-1">Published CSV URL</label>
+            <input
+                type="url"
+                name="csv_url"
+                value="{{ .CSVURL }}"
+                required
+                placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
+                class="w-full rounded border px-3 py-2 border-gray-300"
+            />
+        </div>
+
+        <div>
+            <label class="block font-medium mb-1">Or upload CSV/Excel</label>
+            <input
+                type="file"
+                name="upload_file"
+                accept=".csv,.xls,.xlsx"
+                class="w-full rounded border px-3 py-2 border-gray-300"
+            />
+            <p class="text-xs text-gray-500 mt-1">Upload a local file instead of using a URL.</p>
+        </div>
+
+        <div>
+            <label class="block font-medium mb-1">Portfolio Name (optional)</label>
+            <input
+                type="text"
+                name="portfolio_name"
+                value="{{ .Portfolio }}"
+                placeholder="Core-Portfolio"
+                class="w-full rounded border px-3 py-2 border-gray-300"
+            />
+        </div>
+
+        <div>
+            <label class="block font-medium mb-1">Strategy Name</label>
+            <input
+                type="text"
+                name="strategy_name"
+                value="{{ .Strategy }}"
+                required
+                placeholder="RSI-MES1!-60"
+                class="w-full rounded border px-3 py-2 border-gray-300"
+            />
+            <p class="text-xs text-gray-500 mt-1">Format: NAME-SYMBOL-TIMEFRAME (matches existing importer).</p>
+        </div>
+
+        <div>
+            <label class="block font-medium mb-1">Timezone (IANA)</label>
+            <select
+                name="timezone"
+                class="w-full rounded border px-3 py-2 border-gray-300"
+            >
+                {{ $tz := .Timezone }}
+                <option value="America/Chicago" {{ if eq $tz "America/Chicago" }}selected{{ end }}>America/Chicago</option>
+                <option value="America/New_York" {{ if eq $tz "America/New_York" }}selected{{ end }}>America/New_York</option>
+                <option value="America/Los_Angeles" {{ if eq $tz "America/Los_Angeles" }}selected{{ end }}>America/Los_Angeles</option>
+                <option value="Europe/London" {{ if eq $tz "Europe/London" }}selected{{ end }}>Europe/London</option>
+                <option value="Europe/Berlin" {{ if eq $tz "Europe/Berlin" }}selected{{ end }}>Europe/Berlin</option>
+                <option value="Asia/Tokyo" {{ if eq $tz "Asia/Tokyo" }}selected{{ end }}>Asia/Tokyo</option>
+                <option value="Asia/Hong_Kong" {{ if eq $tz "Asia/Hong_Kong" }}selected{{ end }}>Asia/Hong_Kong</option>
+                <option value="Asia/Singapore" {{ if eq $tz "Asia/Singapore" }}selected{{ end }}>Asia/Singapore</option>
+                <option value="Australia/Sydney" {{ if eq $tz "Australia/Sydney" }}selected{{ end }}>Australia/Sydney</option>
+                <option value="UTC" {{ if eq $tz "UTC" }}selected{{ end }}>UTC</option>
+            </select>
+            <p class="text-xs text-gray-500 mt-1">Used to interpret CSV timestamps and date filters.</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block font-medium mb-1">Start Date (optional)</label>
+                <input
+                    type="date"
+                    name="start_date"
+                    value="{{ .StartDate }}"
+                    class="w-full rounded border px-3 py-2 border-gray-300"
+                />
+            </div>
+            <div>
+                <label class="block font-medium mb-1">End Date (optional)</label>
+                <input
+                    type="date"
+                    name="end_date"
+                    value="{{ .EndDate }}"
+                    class="w-full rounded border px-3 py-2 border-gray-300"
+                />
+            </div>
+        </div>
+
+        <div class="flex justify-end">
+            <button
+                type="submit"
+                class="inline-flex items-center rounded px-5 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700"
+            >
+                Import Trades
+            </button>
+        </div>
+    </form>
+
+    <div class="mt-6" id="import-result">
+        {{ template "import-result" . }}
+    </div>
+</main>
+</body>
+</html>
+
+{{ define "import-result" }}
+<div class="bg-white rounded-lg shadow p-6">
+    {{ if .FormErrors }}
+        <h2 class="text-lg font-semibold text-red-600 mb-3">Import failed</h2>
+        <ul class="list-disc pl-5 text-sm text-red-600">
+            {{ range .FormErrors }}
+                <li>{{ . }}</li>
+            {{ end }}
+        </ul>
+    {{ else if .Result }}
+        <h2 class="text-lg font-semibold text-green-700 mb-3">Import complete</h2>
+        <ul class="grid grid-cols-2 gap-y-2 text-sm mb-4">
+            <li><span class="font-medium">Imported:</span> {{ .Result.Imported }}</li>
+            <li><span class="font-medium">Duplicates:</span> {{ .Result.Duplicates }}</li>
+            <li><span class="font-medium">Skipped:</span> {{ .Result.Skipped }}</li>
+            <li><span class="font-medium">Errors:</span> {{ len .Result.Errors }}</li>
+        </ul>
+
+        {{ if .Result.Errors }}
+            <div class="mt-4">
+                <h3 class="font-medium text-sm mb-2">Row Errors</h3>
+                <ul class="list-disc pl-5 text-sm text-red-600 max-h-48 overflow-auto">
+                    {{ range .Result.Errors }}
+                        <li>Row {{ .Row }}: {{ .Message }}</li>
+                    {{ end }}
+                </ul>
+            </div>
+        {{ end }}
+    {{ else }}
+        <p class="text-sm text-gray-500">Submit a CSV URL to import trades.</p>
+    {{ end }}
+</div>
+{{ end }}

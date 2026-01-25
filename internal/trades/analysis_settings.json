@@ -1,0 +1,24 @@
+[
+  {
+    "portfolio": "Default",
+    "range_quick": "2Y",
+    "auto_refresh": false,
+    "n": "",
+    "unit": "Years",
+    "start_date": "2024-01-25",
+    "end_date": "2026-01-25",
+    "balance": "100000",
+    "updated_at": "2026-01-25T19:08:08.4836031Z"
+  },
+  {
+    "portfolio": "Core Portfolio",
+    "range_quick": "5Y",
+    "auto_refresh": false,
+    "n": "",
+    "unit": "Years",
+    "start_date": "2021-01-25",
+    "end_date": "2026-01-25",
+    "balance": "100000",
+    "updated_at": "2026-01-25T19:16:09.6164129Z"
+  }
+]

@@ -1,0 +1,16 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "cmd /c go build -o ./tmp/app.exe ./cmd/server"
+bin = "tmp/app.exe"
+include_ext = ["go", "html", "tmpl"]
+exclude_dir = ["tmp", "vendor"]
+kill_delay = "500ms"
+pre_cmd = ["powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\killport.ps1"]
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = true

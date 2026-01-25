@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Portfolio Merge</title>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+    <!-- Tailwind (CDN for dev) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    {{ if and .HasChartData (eq .ChartEngine "chartjs") }}
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+    {{ end }}
+    {{ if and .HasChartData (eq .ChartEngine "tv") }}
+    <!-- TradingView Lightweight Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" defer></script>
+    {{ end }}
+
+    <style>
+        .chart-card {
+            height: 280px;
+        }
+        @media (min-width: 768px) {
+            .chart-card {
+                height: 320px;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 text-gray-900">
+<main class="max-w-6xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-3xl font-bold">Portfolio Merge</h1>
+        <div class="space-x-3 text-sm">
+            <a class="text-blue-600 hover:underline" href="/imports/trades">Import</a>
+            <a class="text-blue-600 hover:underline" href="/import/batch">Batch import</a>
+            <a class="text-blue-600 hover:underline" href="/portfolio">Back to portfolio</a>
+        </div>
+    </div>
+
+    {{ if .SuccessMessage }}
+    <div class="mb-4 rounded border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+        {{ .SuccessMessage }}
+    </div>
+    {{ end }}
+
+    {{ if .ErrorMessage }}
+    <div class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        {{ .ErrorMessage }}
+    </div>
+    {{ end }}
+
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div class="lg:col-span-2">
+            <form class="bg-white rounded-lg shadow p-6" method="post" action="/portfolios/merge">
+                <input type="hidden" name="chart" value="{{ .ChartEngine }}">
+                <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div class="w-full md:max-w-md">
+                        <label class="block text-sm font-medium mb-1">Portfolio</label>
+                        <input
+                            class="w-full rounded border px-3 py-2"
+                            type="text"
+                            name="portfolio_name"
+                            list="portfolio-list"
+                            value="{{ .PortfolioName }}"
+                            placeholder="Default"
+                            required
+                        />
+                        <datalist id="portfolio-list">
+                            {{ range .Portfolios }}
+                                <option value="{{ . }}"></option>
+                            {{ end }}
+                        </datalist>
+                    </div>
+                    <button type="submit" class="inline-flex items-center rounded px-5 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700">
+                        Save Mappings
+                    </button>
+                </div>
+
+                <div class="mt-6 overflow-x-auto">
+                    <table class="min-w-full text-sm border border-gray-200">
+                        <thead class="bg-gray-50">
+                        <tr>
+                            <th class="border px-3 py-2 text-left">Key</th>
+                            <th class="border px-3 py-2 text-left">Enabled</th>
+                            <th class="border px-3 py-2 text-left">Weight</th>
+                            <th class="border px-3 py-2 text-left">Ratio Mode</th>
+                            <th class="border px-3 py-2 text-left">Ratio Unit</th>
+                            <th class="border px-3 py-2 text-left">Ratio Amount</th>
+                            <th class="border px-3 py-2 text-left">Notes</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{ range $i, $row := .Rows }}
+                        <tr class="odd:bg-white even:bg-gray-50">
+                            <td class="border px-3 py-2">
+                                <div class="font-medium">{{ $row.StrategyKey }}</div>
+                                <input type="hidden" name="rows[{{ $i }}].strategy_key" value="{{ $row.StrategyKey }}">
+                            </td>
+                            <td class="border px-3 py-2">
+                                <input type="checkbox" name="rows[{{ $i }}].enabled" {{ if $row.Enabled }}checked{{ end }}>
+                            </td>
+                            <td class="border px-3 py-2">
+                                <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].weight" value="{{ $row.Weight }}">
+                            </td>
+                            <td class="border px-3 py-2">
+                                <input type="checkbox" name="rows[{{ $i }}].ratio_mode" {{ if $row.RatioMode }}checked{{ end }}>
+                            </td>
+                            <td class="border px-3 py-2">
+                                <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].ratio_unit" value="{{ $row.RatioUnit }}">
+                            </td>
+                            <td class="border px-3 py-2">
+                                <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].ratio_amount" value="{{ $row.RatioAmount }}">
+                            </td>
+                            <td class="border px-3 py-2">
+                                <input class="w-full rounded border px-2 py-1" type="text" name="rows[{{ $i }}].notes" value="{{ $row.Notes }}">
+                            </td>
+                        </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
+        </div>
+
+        <aside class="bg-gray-50 rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold mb-4">Portfolio Analysis</h2>
+            <form id="analysis-form" method="post" action="/portfolios/merge/analysis" class="space-y-4">
+                <input type="hidden" name="analysis_portfolio" value="{{ .AnalysisPortfolio }}">
+                <input type="hidden" name="analysis_range_quick" id="analysis-range-quick" value="{{ .AnalysisRangeQuick }}">
+                <input type="hidden" name="chart" value="{{ .ChartEngine }}">
+
+                <div class="grid grid-cols-4 gap-2">
+                    {{ $quick := .AnalysisRangeQuick }}
+                    <button type="button" class="quick-btn rounded bg-white px-2 py-1 text-xs border {{ if eq $quick "YTD" }}border-blue-600 text-blue-700{{ else }}border-gray-200{{ end }}" data-range="YTD">YTD</button>
+                    <button type="button" class="quick-btn rounded bg-white px-2 py-1 text-xs border {{ if eq $quick "1Y" }}border-blue-600 text-blue-700{{ else }}border-gray-200{{ end }}" data-range="1Y">1Y</button>
+                    <button type="button" class="quick-btn rounded bg-white px-2 py-1 text-xs border {{ if eq $quick "2Y" }}border-blue-600 text-blue-700{{ else }}border-gray-200{{ end }}" data-range="2Y">2Y</button>
+                    <button type="button" class="quick-btn rounded bg-white px-2 py-1 text-xs border {{ if eq $quick "3Y" }}border-blue-600 text-blue-700{{ else }}border-gray-200{{ end }}" data-range="3Y">3Y</button>
+                    <button type="button" class="quick-btn rounded bg-white px-2 py-1 text-xs border {{ if eq $quick "4Y" }}border-blue-600 text-blue-700{{ else }}border-gray-200{{ end }}" data-range="4Y">4Y</button>
+                    <button type="button" class="quick-btn rounded bg-white px-2 py-1 text-xs border {{ if eq $quick "5Y" }}border-blue-600 text-blue-700{{ else }}border-gray-200{{ end }}" data-range="5Y">5Y</button>
+                    <button type="button" class="quick-btn rounded bg-white px-2 py-1 text-xs border {{ if eq $quick "6M" }}border-blue-600 text-blue-700{{ else }}border-gray-200{{ end }}" data-range="6M">6M</button>
+                    <button type="button" class="quick-btn rounded bg-white px-2 py-1 text-xs border {{ if eq $quick "18M" }}border-blue-600 text-blue-700{{ else }}border-gray-200{{ end }}" data-range="18M">18M</button>
+                    <button type="button" class="quick-btn rounded bg-white px-2 py-1 text-xs border {{ if eq $quick "ALL" }}border-blue-600 text-blue-700{{ else }}border-gray-200{{ end }}" data-range="ALL">ALL</button>
+                </div>
+
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="analysis_auto_refresh" id="analysis-auto-refresh" {{ if .AnalysisAutoRefresh }}checked{{ end }}>
+                    Auto-refresh on change
+                </label>
+
+                <div class="grid grid-cols-4 gap-2 items-center">
+                    <input class="col-span-1 rounded border px-2 py-1 text-sm" type="number" name="analysis_n" value="{{ .AnalysisN }}" placeholder="N">
+                    <select class="col-span-2 rounded border px-2 py-1 text-sm" name="analysis_unit">
+                        <option {{ if eq .AnalysisUnit "Days" }}selected{{ end }}>Days</option>
+                        <option {{ if eq .AnalysisUnit "Months" }}selected{{ end }}>Months</option>
+                        <option {{ if eq .AnalysisUnit "Years" }}selected{{ end }}>Years</option>
+                    </select>
+                    <button type="button" id="analysis-apply" class="col-span-1 rounded bg-blue-600 text-white text-sm py-1">Apply</button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <input class="rounded border px-2 py-1 text-sm" type="date" name="analysis_start_date" id="analysis-start" value="{{ .AnalysisStartDate }}">
+                    <input class="rounded border px-2 py-1 text-sm" type="date" name="analysis_end_date" id="analysis-end" value="{{ .AnalysisEndDate }}">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-1">Analysis Balance</label>
+                    <input class="w-full rounded border px-2 py-1 text-sm" type="number" step="any" name="analysis_balance" value="{{ .AnalysisBalance }}" placeholder="">
+                </div>
+
+                <button type="submit" class="w-full inline-flex items-center justify-center rounded px-5 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700">
+                    Update Dashboard
+                </button>
+            </form>
+        </aside>
+    </div>
+
+    {{ if .AnalysisResult }}
+    <section class="mt-6">
+        <div class="rounded-lg border border-gray-200 bg-white p-4 text-sm">
+            <div class="font-medium text-gray-800">Analysis Output</div>
+            <div class="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3">
+                <div><span class="font-medium">Portfolio:</span> {{ .AnalysisResult.Portfolio }}</div>
+                <div><span class="font-medium">Trades:</span> {{ .AnalysisResult.TradeCount }}</div>
+                <div><span class="font-medium">Range:</span> {{ .AnalysisResult.RangeLabel }}</div>
+                <div><span class="font-medium">Dates:</span> {{ .AnalysisResult.StartDate }} {{ if .AnalysisResult.EndDate }}→ {{ .AnalysisResult.EndDate }}{{ end }}</div>
+                <div><span class="font-medium">Starting Capital:</span> {{ .AnalysisResult.StartingCapital }}</div>
+                <div><span class="font-medium">Ending Capital:</span> {{ .AnalysisResult.EndingCapital }}</div>
+                <div><span class="font-medium">Total PnL:</span> {{ .AnalysisResult.TotalNetPnL }}</div>
+                <div><span class="font-medium">Net Gain %:</span> {{ printf "%.2f%%" .AnalysisResult.NetGainPct }}</div>
+                <div><span class="font-medium">CAGR:</span> {{ printf "%.2f%%" .AnalysisResult.CAGR }}</div>
+                <div><span class="font-medium">Max Drawdown %:</span> {{ printf "%.2f%%" .AnalysisResult.MaxDrawdownPct }}</div>
+                <div><span class="font-medium">Profit Factor:</span> {{ printf "%.2f" .AnalysisResult.ProfitFactor }}</div>
+                <div><span class="font-medium">Ulcer Index:</span> {{ printf "%.2f" .AnalysisResult.UlcerIndex }}</div>
+                <div><span class="font-medium">Equity R²:</span> {{ printf "%.4f" .AnalysisResult.EquityR2 }}</div>
+                <div><span class="font-medium">Time Under Water:</span> {{ printf "%.2f%%" .AnalysisResult.TimeUnderWater }}</div>
+                <div><span class="font-medium">Expectancy ($/trade):</span> {{ printf "%.2f" .AnalysisResult.Expectancy }}</div>
+            </div>
+        </div>
+
+        <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
+            <div class="font-medium text-gray-800">Charts</div>
+            <div class="mt-2 inline-flex rounded border border-gray-200 bg-gray-50 p-1 text-xs">
+                <a href="{{ .ChartLinkJS }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "chartjs" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">chartjs</a>
+                <a href="{{ .ChartLinkTV }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "tv" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">tv</a>
+            </div>
+
+            {{ if .HasChartData }}
+                {{ if eq .ChartEngine "chartjs" }}
+                <div id="chart-panels" class="mt-3 grid grid-cols-1 gap-4">
+                    <div class="rounded border border-gray-100 bg-white p-3">
+                        <div class="text-xs font-medium text-gray-700 mb-2">Equity Curve (Profit, Per Trade)</div>
+                        <div class="chart-card">
+                            <canvas id="equityChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="rounded border border-gray-100 bg-white p-3">
+                        <div class="text-xs font-medium text-gray-700 mb-2">Drawdown (%)</div>
+                        <div class="chart-card">
+                            <canvas id="ddPctChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="rounded border border-gray-100 bg-white p-3">
+                        <div class="text-xs font-medium text-gray-700 mb-2">Drawdown ($)</div>
+                        <div class="chart-card">
+                            <canvas id="ddAmtChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <script type="application/json" id="chart-data">{{ toJSON .AnalysisResult.ChartData }}</script>
+                {{ else if eq .ChartEngine "tv" }}
+                <div class="mt-3 grid grid-cols-1 gap-4">
+                    <div class="rounded border border-gray-100 bg-white p-3">
+                        <div class="text-xs font-medium text-gray-700 mb-2">Equity Curve (Profit, Per Trade)</div>
+                        <div class="chart-card" id="tv-equity"></div>
+                    </div>
+                    <div class="rounded border border-gray-100 bg-white p-3">
+                        <div class="text-xs font-medium text-gray-700 mb-2">Drawdown (%)</div>
+                        <div class="chart-card" id="tv-ddpct"></div>
+                    </div>
+                    <div class="rounded border border-gray-100 bg-white p-3">
+                        <div class="text-xs font-medium text-gray-700 mb-2">Drawdown ($)</div>
+                        <div class="chart-card" id="tv-ddamt"></div>
+                    </div>
+                </div>
+                <script type="application/json" id="chart-data">{{ toJSON .AnalysisResult.ChartData }}</script>
+                {{ end }}
+            {{ else }}
+                <div class="mt-2 text-gray-500">No data to chart</div>
+            {{ end }}
+        </div>
+
+        {{ if .AnalysisResult.Trades }}
+        <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
+            <div class="font-medium text-gray-800 mb-2">Filtered Trades</div>
+            <div class="max-h-64 overflow-auto">
+                <table class="min-w-full text-xs border border-gray-200">
+                    <thead class="bg-gray-50">
+                    <tr>
+                        <th class="border px-2 py-1 text-left">Strategy</th>
+                        <th class="border px-2 py-1 text-left">Direction</th>
+                        <th class="border px-2 py-1 text-left">EnT</th>
+                        <th class="border px-2 py-1 text-left">EnP</th>
+                        <th class="border px-2 py-1 text-left">ExT</th>
+                        <th class="border px-2 py-1 text-left">ExP</th>
+                        <th class="border px-2 py-1 text-left">Net PnL</th>
+                        <th class="border px-2 py-1 text-left">Weighted PnL</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{ range .AnalysisResult.Trades }}
+                    <tr class="odd:bg-white even:bg-gray-50">
+                        <td class="border px-2 py-1">{{ .Strategy }}</td>
+                        <td class="border px-2 py-1">{{ .Direction }}</td>
+                        <td class="border px-2 py-1">{{ .EntryTime }}</td>
+                        <td class="border px-2 py-1">{{ printf "%.2f" .EntryPrice }}</td>
+                        <td class="border px-2 py-1">{{ .ExitTime }}</td>
+                        <td class="border px-2 py-1">{{ printf "%.2f" .ExitPrice }}</td>
+                        <td class="border px-2 py-1">{{ printf "%.2f" .NetPnL }}</td>
+                        <td class="border px-2 py-1">{{ printf "%.2f" .WeightedPnL }}</td>
+                    </tr>
+                    {{ end }}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {{ end }}
+    </section>
+    {{ end }}
+</main>
+
+<script>
+    (function () {
+        const form = document.getElementById("analysis-form");
+        const quickInput = document.getElementById("analysis-range-quick");
+        const startInput = document.getElementById("analysis-start");
+        const endInput = document.getElementById("analysis-end");
+        const autoRefresh = document.getElementById("analysis-auto-refresh");
+        const applyBtn = document.getElementById("analysis-apply");
+        const quickButtons = document.querySelectorAll(".quick-btn");
+
+        function setActiveQuick(value) {
+            quickInput.value = value;
+            quickButtons.forEach(btn => {
+                const active = btn.dataset.range === value;
+                btn.classList.toggle("border-blue-600", active);
+                btn.classList.toggle("text-blue-700", active);
+                btn.classList.toggle("border-gray-200", !active);
+            });
+        }
+
+        function formatDate(d) {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, "0");
+            const dd = String(d.getDate()).padStart(2, "0");
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        function applyQuick(range) {
+            const now = new Date();
+            let start = null;
+            let end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+            if (range === "YTD") {
+                start = new Date(now.getFullYear(), 0, 1);
+            } else if (range === "1Y") {
+                start = new Date(now);
+                start.setFullYear(now.getFullYear() - 1);
+            } else if (range === "2Y") {
+                start = new Date(now);
+                start.setFullYear(now.getFullYear() - 2);
+            } else if (range === "3Y") {
+                start = new Date(now);
+                start.setFullYear(now.getFullYear() - 3);
+            } else if (range === "4Y") {
+                start = new Date(now);
+                start.setFullYear(now.getFullYear() - 4);
+            } else if (range === "5Y") {
+                start = new Date(now);
+                start.setFullYear(now.getFullYear() - 5);
+            } else if (range === "6M") {
+                start = new Date(now);
+                start.setMonth(now.getMonth() - 6);
+            } else if (range === "18M") {
+                start = new Date(now);
+                start.setMonth(now.getMonth() - 18);
+            } else if (range === "ALL") {
+                start = null;
+                end = null;
+            }
+
+            setActiveQuick(range);
+            startInput.value = start ? formatDate(start) : "";
+            endInput.value = end ? formatDate(end) : "";
+            if (autoRefresh && autoRefresh.checked) {
+                form.requestSubmit();
+            }
+        }
+
+        quickButtons.forEach(btn => {
+            btn.addEventListener("click", () => applyQuick(btn.dataset.range));
+        });
+
+        applyBtn.addEventListener("click", () => {
+            const nValue = document.querySelector("[name='analysis_n']").value;
+            const unitValue = document.querySelector("[name='analysis_unit']").value;
+            if (!nValue) {
+                return;
+            }
+            const now = new Date();
+            const n = parseInt(nValue, 10);
+            if (Number.isNaN(n) || n <= 0) {
+                return;
+            }
+            const start = new Date(now);
+            if (unitValue === "Days") {
+                start.setDate(now.getDate() - n);
+            } else if (unitValue === "Months") {
+                start.setMonth(now.getMonth() - n);
+            } else {
+                start.setFullYear(now.getFullYear() - n);
+            }
+            setActiveQuick("");
+            startInput.value = formatDate(start);
+            endInput.value = formatDate(now);
+            if (autoRefresh && autoRefresh.checked) {
+                form.requestSubmit();
+            }
+        });
+
+        if (autoRefresh) {
+            form.querySelectorAll("input, select").forEach(el => {
+                if (el.type === "checkbox" && el.id === "analysis-auto-refresh") return;
+                el.addEventListener("change", () => {
+                    if (autoRefresh.checked) {
+                        form.requestSubmit();
+                    }
+                });
+            });
+        }
+    })();
+</script>
+{{ if and .AnalysisResult .HasChartData (eq .ChartEngine "chartjs") }}
+<script>
+    window.addEventListener("load", () => {
+        if (typeof Chart === "undefined") {
+            return;
+        }
+
+        const dataEl = document.getElementById("chart-data");
+        if (!dataEl || !dataEl.textContent) {
+            return;
+        }
+
+        let data = null;
+        try {
+            data = JSON.parse(dataEl.textContent);
+        } catch (e) {
+            return;
+        }
+
+        const fmtCurrency = new Intl.NumberFormat(undefined, {
+            style: "currency",
+            currency: "USD",
+            maximumFractionDigits: 2
+        });
+        const fmtPercent = new Intl.NumberFormat(undefined, {
+            style: "percent",
+            maximumFractionDigits: 2
+        });
+
+        const equityCtx = document.getElementById("equityChart");
+        if (equityCtx) {
+            new Chart(equityCtx, {
+                type: "bar",
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        {
+                            type: "bar",
+                            label: "P&L",
+                            data: data.pnl,
+                            backgroundColor: "rgba(59, 130, 246, 0.35)",
+                            borderColor: "rgba(59, 130, 246, 0.8)",
+                            borderWidth: 1,
+                            yAxisID: "y"
+                        },
+                        {
+                            type: "line",
+                            label: "Equity",
+                            data: data.equity,
+                            borderColor: "rgba(16, 185, 129, 0.9)",
+                            backgroundColor: "rgba(16, 185, 129, 0.15)",
+                            fill: false,
+                            tension: 0.2,
+                            yAxisID: "y1"
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            position: "left",
+                            ticks: {
+                                callback: value => fmtCurrency.format(value)
+                            }
+                        },
+                        y1: {
+                            position: "right",
+                            grid: { drawOnChartArea: false },
+                            ticks: {
+                                callback: value => fmtCurrency.format(value)
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        const ddPctCtx = document.getElementById("ddPctChart");
+        if (ddPctCtx) {
+            new Chart(ddPctCtx, {
+                type: "line",
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        {
+                            label: "Drawdown (%)",
+                            data: data.ddPct,
+                            borderColor: "rgba(239, 68, 68, 0.9)",
+                            backgroundColor: "rgba(239, 68, 68, 0.2)",
+                            fill: true,
+                            tension: 0.2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            ticks: {
+                                callback: value => fmtPercent.format(value / 100)
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        const ddAmtCtx = document.getElementById("ddAmtChart");
+        if (ddAmtCtx) {
+            new Chart(ddAmtCtx, {
+                type: "line",
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        {
+                            label: "Drawdown ($)",
+                            data: data.ddAmt,
+                            borderColor: "rgba(245, 158, 11, 0.9)",
+                            backgroundColor: "rgba(245, 158, 11, 0.2)",
+                            fill: true,
+                            tension: 0.2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            ticks: {
+                                callback: value => fmtCurrency.format(value)
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+</script>
+{{ end }}
+{{ if and .AnalysisResult .HasChartData (eq .ChartEngine "tv") }}
+<script>
+    window.addEventListener("load", () => {
+        if (typeof LightweightCharts === "undefined") {
+            return;
+        }
+
+        const dataEl = document.getElementById("chart-data");
+        if (!dataEl || !dataEl.textContent) {
+            return;
+        }
+
+        let data = null;
+        try {
+            data = JSON.parse(dataEl.textContent);
+        } catch (e) {
+            return;
+        }
+
+        const toTs = (label) => {
+            const iso = String(label || "").replace(" ", "T") + ":00";
+            const ts = Date.parse(iso);
+            return Number.isFinite(ts) ? Math.floor(ts / 1000) : 0;
+        };
+
+        const makeChart = (containerId) => {
+            const el = document.getElementById(containerId);
+            if (!el) return null;
+            return LightweightCharts.createChart(el, {
+                width: el.clientWidth,
+                height: el.clientHeight,
+                layout: { background: { color: "#ffffff" }, textColor: "#111827" },
+                grid: { vertLines: { color: "#f3f4f6" }, horzLines: { color: "#f3f4f6" } }
+            });
+        };
+
+        const equityChart = makeChart("tv-equity");
+        if (equityChart) {
+            const pnlSeries = equityChart.addHistogramSeries({ color: "rgba(59, 130, 246, 0.6)" });
+            const equitySeries = equityChart.addLineSeries({ color: "rgba(16, 185, 129, 0.9)" });
+            pnlSeries.setData(data.labels.map((label, i) => ({ time: toTs(label), value: data.pnl[i] })));
+            equitySeries.setData(data.labels.map((label, i) => ({ time: toTs(label), value: data.equity[i] })));
+        }
+
+        const ddPctChart = makeChart("tv-ddpct");
+        if (ddPctChart) {
+            const ddPctSeries = ddPctChart.addAreaSeries({
+                lineColor: "rgba(239, 68, 68, 0.9)",
+                topColor: "rgba(239, 68, 68, 0.2)",
+                bottomColor: "rgba(239, 68, 68, 0.05)"
+            });
+            ddPctSeries.setData(data.labels.map((label, i) => ({ time: toTs(label), value: data.ddPct[i] })));
+        }
+
+        const ddAmtChart = makeChart("tv-ddamt");
+        if (ddAmtChart) {
+            const ddAmtSeries = ddAmtChart.addAreaSeries({
+                lineColor: "rgba(245, 158, 11, 0.9)",
+                topColor: "rgba(245, 158, 11, 0.2)",
+                bottomColor: "rgba(245, 158, 11, 0.05)"
+            });
+            ddAmtSeries.setData(data.labels.map((label, i) => ({ time: toTs(label), value: data.ddAmt[i] })));
+        }
+    });
+</script>
+{{ end }}
+</body>
+</html>
