@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -112,6 +113,10 @@ type PortfolioMergeViewModel struct {
 	ChartLinkJS       string
 	ChartLinkTV       string
 	HasChartData      bool
+	ChartsEnabled     bool
+	ChartsAutoEnabled bool
+	ChartThreshold    int
+	ChartEnabledCount int
 
 	AnalysisRangeQuick  string
 	AnalysisAutoRefresh bool
@@ -125,35 +130,52 @@ type PortfolioMergeViewModel struct {
 }
 
 type AnalysisState struct {
-	RangeQuick  string
-	AutoRefresh bool
-	N           string
-	Unit        string
-	StartDate   string
-	EndDate     string
-	Balance     string
-	Portfolio   string
+	RangeQuick       string
+	AutoRefresh      bool
+	N                string
+	Unit             string
+	StartDate        string
+	EndDate          string
+	Balance          string
+	Portfolio        string
+	ChartsEnabled    bool
+	ChartsThreshold  int
+	ChartsEnabledSet bool
 }
 
 type AnalysisResult struct {
-	Portfolio       string
-	TradeCount      int
-	StartingCapital float64
-	EndingCapital   float64
-	TotalNetPnL     float64
-	RangeLabel      string
-	StartDate       string
-	EndDate         string
-	NetGainPct      float64
-	CAGR            float64
-	MaxDrawdownPct  float64
-	ProfitFactor    float64
-	UlcerIndex      float64
-	EquityR2        float64
-	TimeUnderWater  float64
-	Expectancy      float64
-	Trades          []AnalysisTradeRow
-	ChartData       ChartSeries
+	Portfolio           string
+	TradeCount          int
+	StartingCapital     float64
+	EndingCapital       float64
+	TotalNetPnL         float64
+	RangeLabel          string
+	StartDate           string
+	EndDate             string
+	NetGainPct          float64
+	CAGR                float64
+	MaxDrawdownPct      float64
+	ProfitFactor        float64
+	UlcerIndex          float64
+	EquityR2            float64
+	TimeUnderWater      float64
+	Expectancy          float64
+	Trades              []AnalysisTradeRow
+	ChartData           ChartSeries
+	StrategySummary     []StrategySummaryRow
+	PairSummary         []PairSummaryRow
+	ExposureSummary     *ExposureSummary
+	ExposureAnalysis    *ExposureAnalysis
+	ExposureHeatmapSpec ExposureHeatmapSpec
+	SummaryError        string
+	DebugStats          *SummaryDebugStats
+}
+
+type StrategyExposureViewModel struct {
+	PortfolioName  string
+	AnalysisResult *AnalysisResult
+	ErrorMessage   string
+	EmptyMessage   string
 }
 
 type ChartSeries struct {
@@ -195,16 +217,22 @@ type ImportValidation struct {
 }
 
 const defaultTimezone = "America/Chicago"
+const defaultChartThreshold = 10
 
 func main() {
 	tmpl := template.Must(
 		template.New("root").Funcs(template.FuncMap{
-			"toJSON": toJSON,
+			"toJSON":   toJSON,
+			"pct":      pct,
+			"fmtFloat": fmtFloat,
+			"fmtPct":   fmtPct,
+			"dict":     dict,
 		}).ParseFiles(
 			"web/templates/portfolio.html",
 			"web/templates/imports.html",
 			"web/templates/imports_batch.html",
 			"web/templates/portfolio_merge.html",
+			"web/templates/strat_exposure.html",
 		),
 	)
 
@@ -364,6 +392,17 @@ func main() {
 			_ = tmpl.ExecuteTemplate(w, "import-result", vm)
 			return
 		}
+		if hasFile {
+			derived := deriveStrategyNameFromFilename(files[0].Filename)
+			if derived == "" {
+				vm.FormErrors = []string{"Unable to derive strategy name from filename."}
+				_ = tmpl.ExecuteTemplate(w, "import-result", vm)
+				return
+			}
+			vm.Strategy = derived
+			input.Strategy = derived
+			input.CSVURL = ""
+		}
 
 		requireURL := !hasFile
 		validation := validateImportInputWithSource(input, requireURL)
@@ -385,7 +424,7 @@ func main() {
 				_ = tmpl.ExecuteTemplate(w, "import-result", vm)
 				return
 			}
-			summary, rowErrors, filtered, err = executeTradeImportFromTrades(r.Context(), input, validation, parsedTrades, uploadErrors)
+			summary, rowErrors, filtered, err = executeTradeImportFromTrades(r.Context(), validation, parsedTrades, uploadErrors)
 		} else {
 			summary, rowErrors, filtered, err = executeTradeImport(r.Context(), input, validation)
 		}
@@ -442,9 +481,10 @@ func main() {
 				if i < len(rows) {
 					row = rows[i]
 				}
+				derived := deriveStrategyNameFromFilename(fileHeader.Filename)
 				input := ImportInput{
 					CSVURL:    "",
-					Strategy:  strings.TrimSpace(row.Strategy),
+					Strategy:  derived,
 					Portfolio: strings.TrimSpace(row.Portfolio),
 					Timezone:  strings.TrimSpace(row.Timezone),
 					StartDate: strings.TrimSpace(row.StartDate),
@@ -459,6 +499,9 @@ func main() {
 					Portfolio: input.Portfolio,
 				}
 
+				if derived == "" {
+					validation.Errors = append(validation.Errors, "Unable to derive strategy name from filename.")
+				}
 				if len(validation.Errors) > 0 {
 					result.Status = "Error"
 					result.Error = strings.Join(validation.Errors, " ")
@@ -476,7 +519,7 @@ func main() {
 					continue
 				}
 
-				summary, rowErrors, filtered, err := executeTradeImportFromTrades(r.Context(), input, validation, parsedTrades, uploadErrors)
+				summary, rowErrors, filtered, err := executeTradeImportFromTrades(r.Context(), validation, parsedTrades, uploadErrors)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					result.Status = "Error"
 					result.Error = err.Error()
@@ -596,7 +639,10 @@ func main() {
 			if err != nil {
 				vm.ErrorMessage = err.Error()
 			}
-			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+			if err := tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm); err != nil {
+				log.Printf("[render] portfolio_merge.html failed (get): %v", err)
+				http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 
@@ -615,12 +661,19 @@ func main() {
 		vm, err := buildPortfolioMergeViewModel(portfolioName, analysis, result, "", chartEngine, buildBaseQuery(portfolioName))
 		if err != nil {
 			vm.ErrorMessage = err.Error()
-			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+			if err := tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm); err != nil {
+				log.Printf("[render] portfolio_merge.html failed (post): %v", err)
+				http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 
 		vm.Rows = mappingInputsToView(inputs)
-		_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+		applyChartSettings(&vm, analysis, vm.Rows)
+		if err := tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm); err != nil {
+			log.Printf("[render] portfolio_merge.html failed (analysis): %v", err)
+			http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+		}
 	})
 
 	// =================================================
@@ -649,8 +702,12 @@ func main() {
 			}
 			if len(inputs) > 0 {
 				vm.Rows = mappingInputsToView(inputs)
+				applyChartSettings(&vm, analysis, vm.Rows)
 			}
-			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+			if err := tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm); err != nil {
+				log.Printf("[render] portfolio_merge.html failed (analysis error): %v", err)
+				http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 
@@ -664,8 +721,12 @@ func main() {
 			}
 			if len(inputs) > 0 {
 				vm.Rows = mappingInputsToView(inputs)
+				applyChartSettings(&vm, analysis, vm.Rows)
 			}
-			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+			if err := tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm); err != nil {
+				log.Printf("[render] portfolio_merge.html failed (save analysis): %v", err)
+				http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 
@@ -674,14 +735,79 @@ func main() {
 			vm.ErrorMessage = err.Error()
 			if len(inputs) > 0 {
 				vm.Rows = mappingInputsToView(inputs)
+				applyChartSettings(&vm, analysis, vm.Rows)
 			}
-			_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+			if err := tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm); err != nil {
+				log.Printf("[render] portfolio_merge.html failed (analysis build): %v", err)
+				http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		if len(inputs) > 0 {
 			vm.Rows = mappingInputsToView(inputs)
+			applyChartSettings(&vm, analysis, vm.Rows)
 		}
-		_ = tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm)
+		if result != nil {
+			strategyCount := len(result.StrategySummary)
+			pairCount := len(result.PairSummary)
+			tradeCount := len(result.Trades)
+			labelCount := len(result.ChartData.Labels)
+			firstLabel := ""
+			if labelCount > 0 {
+				firstLabel = result.ChartData.Labels[0]
+			}
+			equityPoints := len(result.ChartData.Equity)
+			drawdownPoints := len(result.ChartData.DdPct)
+			debug := result.DebugStats
+			log.Printf("[update-dashboard] totalMergedTrades=%d distinctStrategies=%d distinctPairs=%d labels=%d firstLabel=%q equityPoints=%d drawdownPoints=%d strategySummary=%d pairSummary=%d tradeRows=%d", safeDebugCount(debug, func(d *SummaryDebugStats) int { return d.TotalTrades }), safeDebugCount(debug, func(d *SummaryDebugStats) int { return d.DistinctStrategies }), safeDebugCount(debug, func(d *SummaryDebugStats) int { return d.DistinctPairs }), labelCount, firstLabel, equityPoints, drawdownPoints, strategyCount, pairCount, tradeCount)
+			if debug != nil {
+				log.Printf("[update-dashboard] invalidExitTime=%d invalidBalance=%d emptyStrategy=%d", debug.InvalidExitTime, debug.InvalidBalance, debug.EmptyStrategy)
+				log.Printf("[update-dashboard] invalidExitSamples=%v", debug.InvalidExitSamples)
+				log.Printf("[update-dashboard] invalidBalanceSamples=%v", debug.InvalidBalanceSamples)
+				log.Printf("[update-dashboard] emptyStrategySamples=%v", debug.EmptyStrategySamples)
+			}
+			log.Printf("[update-dashboard] responseKeys=Portfolio,TradeCount,StartingCapital,EndingCapital,TotalNetPnL,RangeLabel,StartDate,EndDate,NetGainPct,CAGR,MaxDrawdownPct,ProfitFactor,UlcerIndex,EquityR2,TimeUnderWater,Expectancy,Trades,ChartData,StrategySummary,PairSummary")
+			log.Printf("[update-dashboard] chartDataKeys=labels,pnl,equity,ddPct,ddAmt")
+		}
+		if err := tmpl.ExecuteTemplate(w, "portfolio_merge.html", vm); err != nil {
+			log.Printf("[render] portfolio_merge.html failed (analysis done): %v", err)
+			http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+		}
+	})
+
+	// =================================================
+	// Strategy exposure UI
+	// =================================================
+	mux.HandleFunc("/strat-exposure", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		portfolioName := strings.TrimSpace(r.URL.Query().Get("portfolio"))
+		analysis := loadAnalysisState(portfolioName)
+		if portfolioName != "" {
+			if loaded, err := trades.LoadPortfolioByName(portfolioName); err == nil && loaded != nil {
+				analysis = applyPortfolioFilters(analysis, loaded)
+			}
+			analysis.Portfolio = portfolioName
+		}
+
+		result, err := computeAnalysisResult(analysis)
+		vm := StrategyExposureViewModel{
+			PortfolioName:  portfolioName,
+			AnalysisResult: result,
+		}
+		if err != nil {
+			vm.ErrorMessage = err.Error()
+		}
+		if result == nil || result.ExposureAnalysis == nil || result.ExposureSummary == nil {
+			vm.EmptyMessage = "Need at least 2 strategies with valid exposure intervals."
+		}
+
+		_ = tmpl.ExecuteTemplate(w, "strat_exposure.html", vm)
 	})
 
 	// =================================================
@@ -750,6 +876,24 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
+	mux.HandleFunc("/portfolios/merge/delete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		_ = r.ParseForm()
+		name := strings.TrimSpace(r.FormValue("name"))
+		if name == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if err := trades.DeletePortfolioByName(name); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, "/portfolios/merge", http.StatusSeeOther)
+	})
+
 	mux.HandleFunc("/api/portfolios/save", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -783,12 +927,15 @@ func main() {
 		}
 
 		analysisState := AnalysisState{
-			RangeQuick: strings.TrimSpace(payload.Analysis.RangeQuick),
-			N:          strings.TrimSpace(payload.Analysis.N),
-			Unit:       strings.TrimSpace(payload.Analysis.Unit),
-			StartDate:  strings.TrimSpace(payload.Analysis.StartDate),
-			EndDate:    strings.TrimSpace(payload.Analysis.EndDate),
-			Balance:    strings.TrimSpace(payload.Analysis.Balance),
+			RangeQuick:       strings.TrimSpace(payload.Analysis.RangeQuick),
+			N:                strings.TrimSpace(payload.Analysis.N),
+			Unit:             strings.TrimSpace(payload.Analysis.Unit),
+			StartDate:        strings.TrimSpace(payload.Analysis.StartDate),
+			EndDate:          strings.TrimSpace(payload.Analysis.EndDate),
+			Balance:          strings.TrimSpace(payload.Analysis.Balance),
+			ChartsEnabled:    false,
+			ChartsThreshold:  defaultChartThreshold,
+			ChartsEnabledSet: false,
 		}
 
 		enabledCount := 0
@@ -1005,6 +1152,31 @@ func validateImportInput(input ImportInput) ImportValidation {
 	return validateImportInputWithSource(input, true)
 }
 
+var filenameWeightSuffixRe = regexp.MustCompile(`(?i)^w?\d+(\.\d+)?$`)
+
+func deriveStrategyNameFromFilename(filename string) string {
+	name := strings.TrimSpace(filepath.Base(filename))
+	if name == "" {
+		return ""
+	}
+	lowerExt := strings.ToLower(filepath.Ext(name))
+	if lowerExt == ".csv" || lowerExt == ".xls" || lowerExt == ".xlsx" {
+		name = name[:len(name)-len(lowerExt)]
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	idx := strings.LastIndex(name, "_")
+	if idx > -1 && idx < len(name)-1 {
+		token := name[idx+1:]
+		if filenameWeightSuffixRe.MatchString(token) {
+			name = strings.TrimSpace(name[:idx])
+		}
+	}
+	return name
+}
+
 func validateImportInputWithSource(input ImportInput, requireURL bool) ImportValidation {
 	input.CSVURL = strings.TrimSpace(input.CSVURL)
 	input.Strategy = strings.TrimSpace(input.Strategy)
@@ -1108,10 +1280,10 @@ func executeTradeImport(ctx context.Context, input ImportInput, validation Impor
 		return trades.ImportSummary{}, rowErrors, 0, err
 	}
 
-	return executeTradeImportFromTrades(ctx, input, validation, parsedTrades, rowErrors)
+	return executeTradeImportFromTrades(ctx, validation, parsedTrades, rowErrors)
 }
 
-func executeTradeImportFromTrades(ctx context.Context, input ImportInput, validation ImportValidation, parsedTrades []trades.Trade, rowErrors []trades.RowError) (trades.ImportSummary, []trades.RowError, int, error) {
+func executeTradeImportFromTrades(ctx context.Context, validation ImportValidation, parsedTrades []trades.Trade, rowErrors []trades.RowError) (trades.ImportSummary, []trades.RowError, int, error) {
 	filtered := 0
 	finalTrades := make([]trades.Trade, 0, len(parsedTrades))
 	for _, t := range parsedTrades {
@@ -1269,7 +1441,14 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 	if result != nil {
 		chartData = result.ChartData
 	}
-	hasChartData := len(chartData.Labels) > 0
+	enabledCount := countEnabled(rows)
+	chartThreshold := normalizeChartThreshold(analysis.ChartsThreshold)
+	autoEnabled := enabledCount > 0 && enabledCount <= chartThreshold
+	chartsEnabled := analysis.ChartsEnabled
+	if !analysis.ChartsEnabledSet {
+		chartsEnabled = autoEnabled
+	}
+	hasChartData := chartsEnabled && (len(chartData.Labels) > 0 || len(chartData.Equity) > 0 || len(chartData.PnL) > 0)
 
 	baseName := portfolioName
 	if saved != nil && strings.TrimSpace(saved.BaseName) != "" {
@@ -1277,7 +1456,7 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 	}
 
 	start, end := resolveNameDates(analysis)
-	preview := buildPortfolioFinalName(baseName, countEnabled(rows), start, end, true, "")
+	preview := buildPortfolioFinalName(baseName, enabledCount, start, end, true, "")
 
 	return PortfolioMergeViewModel{
 		PortfolioName:       baseName,
@@ -1300,20 +1479,27 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 		ChartLinkJS:         chartLinks.ChartJS,
 		ChartLinkTV:         chartLinks.TV,
 		HasChartData:        hasChartData,
+		ChartsEnabled:       chartsEnabled,
+		ChartsAutoEnabled:   autoEnabled && !analysis.ChartsEnabledSet,
+		ChartThreshold:      chartThreshold,
+		ChartEnabledCount:   enabledCount,
 	}, nil
 }
 
 func defaultAnalysisState(portfolioName string) AnalysisState {
 	portfolio := strings.TrimSpace(portfolioName)
 	return AnalysisState{
-		RangeQuick:  "",
-		AutoRefresh: false,
-		N:           "",
-		Unit:        "Years",
-		StartDate:   "",
-		EndDate:     "",
-		Balance:     "",
-		Portfolio:   portfolio,
+		RangeQuick:       "",
+		AutoRefresh:      false,
+		N:                "",
+		Unit:             "Years",
+		StartDate:        "",
+		EndDate:          "",
+		Balance:          "",
+		Portfolio:        portfolio,
+		ChartsEnabled:    false,
+		ChartsThreshold:  defaultChartThreshold,
+		ChartsEnabledSet: false,
 	}
 }
 
@@ -1332,6 +1518,11 @@ func loadAnalysisState(portfolioName string) AnalysisState {
 	state.EndDate = stored.EndDate
 	state.Balance = stored.Balance
 	state.Portfolio = stored.Portfolio
+	state.ChartsEnabled = stored.ChartsEnabled
+	state.ChartsEnabledSet = stored.ChartsEnabledSet
+	if stored.ChartsThreshold > 0 {
+		state.ChartsThreshold = stored.ChartsThreshold
+	}
 
 	return state
 }
@@ -1342,27 +1533,40 @@ func saveAnalysisState(state AnalysisState) error {
 	}
 
 	return trades.SaveAnalysisSettings(trades.AnalysisSettings{
-		Portfolio:   strings.TrimSpace(state.Portfolio),
-		RangeQuick:  state.RangeQuick,
-		AutoRefresh: state.AutoRefresh,
-		N:           state.N,
-		Unit:        state.Unit,
-		StartDate:   state.StartDate,
-		EndDate:     state.EndDate,
-		Balance:     state.Balance,
+		Portfolio:        strings.TrimSpace(state.Portfolio),
+		RangeQuick:       state.RangeQuick,
+		AutoRefresh:      state.AutoRefresh,
+		N:                state.N,
+		Unit:             state.Unit,
+		StartDate:        state.StartDate,
+		EndDate:          state.EndDate,
+		Balance:          state.Balance,
+		ChartsEnabled:    state.ChartsEnabled,
+		ChartsThreshold:  normalizeChartThreshold(state.ChartsThreshold),
+		ChartsEnabledSet: state.ChartsEnabledSet,
 	})
 }
 
 func parseAnalysisState(form url.Values) AnalysisState {
+	threshold := defaultChartThreshold
+	if raw := strings.TrimSpace(form.Get("analysis_charts_threshold")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			threshold = parsed
+		}
+	}
+	chartsEnabledSet := form.Has("analysis_charts_enabled")
 	return AnalysisState{
-		RangeQuick:  strings.TrimSpace(form.Get("analysis_range_quick")),
-		AutoRefresh: form.Get("analysis_auto_refresh") == "on",
-		N:           strings.TrimSpace(form.Get("analysis_n")),
-		Unit:        strings.TrimSpace(form.Get("analysis_unit")),
-		StartDate:   strings.TrimSpace(form.Get("analysis_start_date")),
-		EndDate:     strings.TrimSpace(form.Get("analysis_end_date")),
-		Balance:     strings.TrimSpace(form.Get("analysis_balance")),
-		Portfolio:   strings.TrimSpace(form.Get("analysis_portfolio")),
+		RangeQuick:       strings.TrimSpace(form.Get("analysis_range_quick")),
+		AutoRefresh:      form.Get("analysis_auto_refresh") == "on",
+		N:                strings.TrimSpace(form.Get("analysis_n")),
+		Unit:             strings.TrimSpace(form.Get("analysis_unit")),
+		StartDate:        strings.TrimSpace(form.Get("analysis_start_date")),
+		EndDate:          strings.TrimSpace(form.Get("analysis_end_date")),
+		Balance:          strings.TrimSpace(form.Get("analysis_balance")),
+		Portfolio:        strings.TrimSpace(form.Get("analysis_portfolio")),
+		ChartsEnabled:    form.Get("analysis_charts_enabled") == "on",
+		ChartsThreshold:  threshold,
+		ChartsEnabledSet: chartsEnabledSet,
 	}
 }
 
@@ -1449,8 +1653,20 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		}
 	}
 
+	enabledCount := countEnabledMappings(mapByKey)
+	chartsEnabled, _, _ := resolveChartSettings(state, enabledCount)
+
 	filtered := make([]portfolio.Trade, 0)
 	tradeRows := make([]AnalysisTradeRow, 0)
+	summaryTrades := make([]SummaryTradeRow, 0)
+	exposureTrades := make([]ExposureTradeRow, 0)
+	debugStats := &SummaryDebugStats{}
+	strategySet := make(map[string]struct{})
+	pairSet := make(map[string]struct{})
+	invalidExitSamples := make([]string, 0, 3)
+	invalidBalanceSamples := make([]string, 0, 3)
+	emptyStrategySamples := make([]string, 0, 3)
+	runningBalance := startingCapital
 	type chartPoint struct {
 		Time  time.Time
 		Label string
@@ -1459,7 +1675,25 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 	chartPoints := make([]chartPoint, 0)
 	minExit := (*time.Time)(nil)
 	maxExit := (*time.Time)(nil)
+	debugStats.TotalTrades = len(tradesList)
 	for _, t := range tradesList {
+		if t.ExitDatetime.IsZero() {
+			debugStats.InvalidExitTime++
+			if len(invalidExitSamples) < 3 {
+				invalidExitSamples = append(invalidExitSamples, fmt.Sprintf("strategy=%s pair=%s exit=%v pnl=%v", t.Strategy, t.Symbol, t.ExitDatetime, t.NetPnL))
+			}
+		}
+		if strings.TrimSpace(t.Strategy) == "" {
+			debugStats.EmptyStrategy++
+			if len(emptyStrategySamples) < 3 {
+				emptyStrategySamples = append(emptyStrategySamples, fmt.Sprintf("strategy=%s pair=%s exit=%v pnl=%v", t.Strategy, t.Symbol, t.ExitDatetime, t.NetPnL))
+			}
+		} else {
+			strategySet[strings.TrimSpace(t.Strategy)] = struct{}{}
+		}
+		if strings.TrimSpace(t.Symbol) != "" {
+			pairSet[strings.TrimSpace(t.Symbol)] = struct{}{}
+		}
 		if start != nil && t.ExitDatetime.Before(*start) {
 			continue
 		}
@@ -1482,6 +1716,26 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		}
 
 		weightedPnL := t.NetPnL * multiplier
+		if !isFinite(weightedPnL) {
+			debugStats.InvalidBalance++
+			if len(invalidBalanceSamples) < 3 {
+				invalidBalanceSamples = append(invalidBalanceSamples, fmt.Sprintf("strategy=%s pair=%s exit=%v pnl=%v", t.Strategy, t.Symbol, t.ExitDatetime, t.NetPnL))
+			}
+			continue
+		}
+		acctPct := math.NaN()
+		notional := t.Size * t.EntryPrice
+		if isFinite(notional) && notional != 0 {
+			acctPct = weightedPnL / notional
+		}
+		runningBalance = runningBalance + weightedPnL
+		if !isFinite(runningBalance) {
+			debugStats.InvalidBalance++
+			if len(invalidBalanceSamples) < 3 {
+				invalidBalanceSamples = append(invalidBalanceSamples, fmt.Sprintf("strategy=%s pair=%s exit=%v balance=%v", t.Strategy, t.Symbol, t.ExitDatetime, runningBalance))
+			}
+			continue
+		}
 		filtered = append(filtered, portfolio.Trade{
 			ExitTime: t.ExitDatetime,
 			NetPnL:   weightedPnL,
@@ -1490,11 +1744,13 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		if labelTime.IsZero() {
 			labelTime = t.EntryDatetime
 		}
-		chartPoints = append(chartPoints, chartPoint{
-			Time:  labelTime,
-			Label: formatTradeDate(labelTime),
-			PnL:   weightedPnL,
-		})
+		if chartsEnabled {
+			chartPoints = append(chartPoints, chartPoint{
+				Time:  labelTime,
+				Label: formatTradeDate(labelTime),
+				PnL:   weightedPnL,
+			})
+		}
 		tradeRows = append(tradeRows, AnalysisTradeRow{
 			Strategy:      t.Strategy,
 			Direction:     t.Direction,
@@ -1507,7 +1763,26 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 			NetPnL:        t.NetPnL,
 			WeightedPnL:   weightedPnL,
 		})
+		exposureTrades = append(exposureTrades, ExposureTradeRow{
+			Strategy:  t.Strategy,
+			EntryTime: t.EntryDatetime,
+			ExitTime:  t.ExitDatetime,
+			PnLAbs:    weightedPnL,
+		})
+		summaryTrades = append(summaryTrades, SummaryTradeRow{
+			Strategy: t.Strategy,
+			Pair:     t.Symbol,
+			Dt:       t.ExitDatetime,
+			AcctPct:  acctPct,
+			Balance:  runningBalance,
+			PnLAbs:   weightedPnL,
+		})
 	}
+	debugStats.DistinctStrategies = len(strategySet)
+	debugStats.DistinctPairs = len(pairSet)
+	debugStats.InvalidExitSamples = invalidExitSamples
+	debugStats.InvalidBalanceSamples = invalidBalanceSamples
+	debugStats.EmptyStrategySamples = emptyStrategySamples
 
 	result := portfolio.Compute(startingCapital, filtered)
 	if start == nil {
@@ -1548,57 +1823,81 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		return tradeRows[i].EntryTimeSort.Before(tradeRows[j].EntryTimeSort)
 	})
 
-	sort.Slice(chartPoints, func(i, j int) bool {
-		return chartPoints[i].Time.Before(chartPoints[j].Time)
-	})
+	chartData := ChartSeries{}
+	if chartsEnabled {
+		sort.Slice(chartPoints, func(i, j int) bool {
+			return chartPoints[i].Time.Before(chartPoints[j].Time)
+		})
 
-	chartData := ChartSeries{
-		Labels: make([]string, 0, len(chartPoints)),
-		PnL:    make([]float64, 0, len(chartPoints)),
-		Equity: make([]float64, 0, len(chartPoints)),
-		DdPct:  make([]float64, 0, len(chartPoints)),
-		DdAmt:  make([]float64, 0, len(chartPoints)),
+		chartData = ChartSeries{
+			Labels: make([]string, 0, len(chartPoints)),
+			PnL:    make([]float64, 0, len(chartPoints)),
+			Equity: make([]float64, 0, len(chartPoints)),
+			DdPct:  make([]float64, 0, len(chartPoints)),
+			DdAmt:  make([]float64, 0, len(chartPoints)),
+		}
 	}
 
-	equity := 0.0
-	peak := 0.0
-	for _, point := range chartPoints {
-		equity += point.PnL
-		if equity > peak {
-			peak = equity
-		}
-		ddAmt := equity - peak
-		ddPct := 0.0
-		if peak != 0 {
-			ddPct = (ddAmt / peak) * 100
-		}
+	weights := defaultScoreWeights()
+	strategySummary := buildStrategySummary(summaryTrades, startingCapital, weights)
+	pairSummary := buildPairSummary(summaryTrades, startingCapital, weights)
+	exposureSummary, exposureAnalysis := buildExposureAnalysis(exposureTrades)
+	heatmapSpec := ExposureHeatmapSpec{
+		JaccardMid:  0.20,
+		JaccardMax:  0.50,
+		DdAttribMid: 0.10,
+		DdAttribMax: 0.20,
+		RiskMid:     0.005,
+		RiskMax:     0.02,
+	}
 
-		chartData.Labels = append(chartData.Labels, point.Label)
-		chartData.PnL = append(chartData.PnL, point.PnL)
-		chartData.Equity = append(chartData.Equity, equity)
-		chartData.DdPct = append(chartData.DdPct, ddPct)
-		chartData.DdAmt = append(chartData.DdAmt, ddAmt)
+	if chartsEnabled {
+		equity := 0.0
+		peak := 0.0
+		for _, point := range chartPoints {
+			equity += point.PnL
+			if equity > peak {
+				peak = equity
+			}
+			ddAmt := equity - peak
+			ddPct := 0.0
+			if peak != 0 {
+				ddPct = (ddAmt / peak) * 100
+			}
+
+			chartData.Labels = append(chartData.Labels, point.Label)
+			chartData.PnL = append(chartData.PnL, point.PnL)
+			chartData.Equity = append(chartData.Equity, equity)
+			chartData.DdPct = append(chartData.DdPct, ddPct)
+			chartData.DdAmt = append(chartData.DdAmt, ddAmt)
+		}
 	}
 
 	return &AnalysisResult{
-		Portfolio:       buildPortfolioLabel(state),
-		TradeCount:      len(filtered),
-		StartingCapital: startingCapital,
-		EndingCapital:   result.EndingCapital,
-		TotalNetPnL:     result.TotalNetPnL,
-		RangeLabel:      label,
-		StartDate:       formatDatePtr(start),
-		EndDate:         formatDatePtr(end),
-		NetGainPct:      netGainPct,
-		CAGR:            cagr,
-		MaxDrawdownPct:  maxDdPct,
-		ProfitFactor:    profitFactor,
-		UlcerIndex:      ulcer,
-		EquityR2:        r2,
-		TimeUnderWater:  tuw,
-		Expectancy:      expectancy,
-		Trades:          tradeRows,
-		ChartData:       chartData,
+		Portfolio:           buildPortfolioLabel(state),
+		TradeCount:          len(filtered),
+		StartingCapital:     startingCapital,
+		EndingCapital:       result.EndingCapital,
+		TotalNetPnL:         result.TotalNetPnL,
+		RangeLabel:          label,
+		StartDate:           formatDatePtr(start),
+		EndDate:             formatDatePtr(end),
+		NetGainPct:          netGainPct,
+		CAGR:                cagr,
+		MaxDrawdownPct:      maxDdPct,
+		ProfitFactor:        profitFactor,
+		UlcerIndex:          ulcer,
+		EquityR2:            r2,
+		TimeUnderWater:      tuw,
+		Expectancy:          expectancy,
+		Trades:              tradeRows,
+		ChartData:           chartData,
+		StrategySummary:     strategySummary,
+		PairSummary:         pairSummary,
+		ExposureSummary:     exposureSummary,
+		ExposureAnalysis:    exposureAnalysis,
+		ExposureHeatmapSpec: heatmapSpec,
+		DebugStats:          debugStats,
 	}, nil
 }
 
@@ -1708,6 +2007,35 @@ func toJSON(v any) template.JS {
 		return template.JS("null")
 	}
 	return template.JS(b)
+}
+
+func dict(values ...any) map[string]any {
+	if len(values)%2 != 0 {
+		return map[string]any{}
+	}
+	result := make(map[string]any, len(values)/2)
+	for i := 0; i < len(values); i += 2 {
+		key, ok := values[i].(string)
+		if !ok {
+			continue
+		}
+		result[key] = values[i+1]
+	}
+	return result
+}
+
+func pct(v float64) float64 {
+	if !isFinite(v) {
+		return 0
+	}
+	return v * 100
+}
+
+func safeDebugCount(stats *SummaryDebugStats, getter func(*SummaryDebugStats) int) int {
+	if stats == nil || getter == nil {
+		return 0
+	}
+	return getter(stats)
 }
 
 func mappingMultiplier(mapByKey map[string]trades.StrategyPortfolioMapping, strategy string, startingCapital float64) (float64, bool) {
@@ -1896,6 +2224,53 @@ func countEnabled(rows []MappingRowView) int {
 		}
 	}
 	return count
+}
+
+func countEnabledMappings(mapByKey map[string]trades.PortfolioMapping) int {
+	count := 0
+	for _, mapping := range mapByKey {
+		if mapping.Enabled {
+			count++
+		}
+	}
+	return count
+}
+
+func normalizeChartThreshold(value int) int {
+	if value <= 0 {
+		return defaultChartThreshold
+	}
+	return value
+}
+
+func resolveChartSettings(state AnalysisState, enabledCount int) (chartsEnabled bool, autoEnabled bool, threshold int) {
+	threshold = normalizeChartThreshold(state.ChartsThreshold)
+	autoEnabled = enabledCount > 0 && enabledCount <= threshold
+	if state.ChartsEnabledSet {
+		chartsEnabled = state.ChartsEnabled
+	} else {
+		chartsEnabled = autoEnabled
+	}
+	return chartsEnabled, autoEnabled, threshold
+}
+
+func applyChartSettings(vm *PortfolioMergeViewModel, state AnalysisState, rows []MappingRowView) {
+	enabledCount := countEnabled(rows)
+	chartsEnabled, autoEnabled, threshold := resolveChartSettings(state, enabledCount)
+	vm.ChartsEnabled = chartsEnabled
+	vm.ChartsAutoEnabled = autoEnabled && !state.ChartsEnabledSet
+	vm.ChartThreshold = threshold
+	vm.ChartEnabledCount = enabledCount
+	if !chartsEnabled {
+		vm.HasChartData = false
+		return
+	}
+	if vm.AnalysisResult == nil {
+		vm.HasChartData = false
+		return
+	}
+	chartData := vm.AnalysisResult.ChartData
+	vm.HasChartData = len(chartData.Labels) > 0 || len(chartData.Equity) > 0 || len(chartData.PnL) > 0
 }
 
 func resolveNameDates(state AnalysisState) (*time.Time, *time.Time) {

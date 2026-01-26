@@ -16,7 +16,7 @@
     <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-3xl font-bold">Batch Import Trades</h1>
-            <p class="text-sm text-gray-600 mt-1">Provide one strategy per URL. Strategy name required.</p>
+            <p class="text-sm text-gray-600 mt-1">Import by URL or upload files (strategy name auto-deduced from filename).</p>
         </div>
         <div class="space-x-3 text-sm">
             <a class="text-blue-600 hover:underline" href="/imports/trades">Single import</a>
@@ -26,7 +26,18 @@
     </div>
 
     <form class="bg-white rounded-lg shadow p-6" method="post" action="/import/batch" enctype="multipart/form-data">
-        <div class="overflow-x-auto">
+        <div class="flex flex-wrap gap-4 text-sm mb-4">
+            <label class="inline-flex items-center gap-2">
+                <input type="radio" name="batch_mode" value="url" checked>
+                Import by URL list
+            </label>
+            <label class="inline-flex items-center gap-2">
+                <input type="radio" name="batch_mode" value="file">
+                Upload files
+            </label>
+        </div>
+
+        <div class="overflow-x-auto" id="batch-url-section">
             <table class="min-w-full text-sm border border-gray-200" id="batch-table">
                 <thead class="bg-gray-50">
                 <tr>
@@ -73,7 +84,7 @@
             </table>
         </div>
 
-        <div class="mt-4">
+        <div class="mt-4" id="batch-file-section">
             <label class="block text-sm font-medium mb-1">Or upload CSV/Excel (multiple files)</label>
             <input
                 type="file"
@@ -82,7 +93,7 @@
                 accept=".csv,.xls,.xlsx"
                 class="w-full rounded border px-3 py-2 border-gray-300"
             />
-            <p class="text-xs text-gray-500 mt-1">You can select multiple files at once.</p>
+            <p class="text-xs text-gray-500 mt-1">You can select multiple files at once. Strategy name is derived from each filename.</p>
         </div>
 
         <div class="flex items-center justify-between mt-4">
@@ -183,6 +194,30 @@
             </td>
         `;
     }
+
+    (function () {
+        const urlSection = document.getElementById("batch-url-section");
+        const fileSection = document.getElementById("batch-file-section");
+        const radios = Array.from(document.querySelectorAll("input[name='batch_mode']"));
+
+        const setMode = (mode) => {
+            const isFile = mode === "file";
+            if (urlSection) urlSection.classList.toggle("hidden", isFile);
+            if (fileSection) fileSection.classList.toggle("hidden", !isFile);
+            document.querySelectorAll("input[name$='.csv_url']").forEach(el => {
+                el.required = !isFile;
+            });
+            document.querySelectorAll("input[name$='.strategy_name']").forEach(el => {
+                el.required = !isFile;
+            });
+        };
+
+        radios.forEach(radio => {
+            radio.addEventListener("change", () => setMode(radio.value));
+        });
+
+        setMode("url");
+    })();
 </script>
 </body>
 </html>

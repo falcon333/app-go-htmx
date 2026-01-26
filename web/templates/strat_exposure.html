@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Strategy Exposure</title>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+    <!-- Tailwind (CDN for dev) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        .matrix-table th,
+        .matrix-table td {
+            white-space: nowrap;
+        }
+        .matrix-table th {
+            background: #f9fafb;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900">
+<main class="max-w-6xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">Strategy Exposure</h1>
+            <p class="text-sm text-gray-600 mt-1">Exposure overlap, drawdown coincidence, and derived risk score.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 text-sm">
+            <button id="strat-exposure-export" type="button" class="rounded border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">Export CSV</button>
+            <a class="text-blue-600 hover:underline" href="/portfolios/merge">Back to merge</a>
+            <a class="text-blue-600 hover:underline" href="/portfolio">Back to portfolio</a>
+        </div>
+    </div>
+
+    {{ if .ErrorMessage }}
+    <div class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        {{ .ErrorMessage }}
+    </div>
+    {{ end }}
+
+    {{ if .AnalysisResult }}
+    <section class="mb-6">
+        <div class="rounded-lg border border-gray-200 bg-white p-4 text-sm">
+            <div class="font-medium text-gray-800">Analysis Output</div>
+            <div class="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3">
+                <div><span class="font-medium">Portfolio:</span> {{ .AnalysisResult.Portfolio }}</div>
+                <div><span class="font-medium">Trades:</span> {{ .AnalysisResult.TradeCount }}</div>
+                <div><span class="font-medium">Range:</span> {{ .AnalysisResult.RangeLabel }}</div>
+                <div><span class="font-medium">Dates:</span> {{ .AnalysisResult.StartDate }} {{ if .AnalysisResult.EndDate }}→ {{ .AnalysisResult.EndDate }}{{ end }}</div>
+                <div><span class="font-medium">Starting Capital:</span> {{ printf "%.2f" .AnalysisResult.StartingCapital }}</div>
+                <div><span class="font-medium">Ending Capital:</span> {{ printf "%.2f" .AnalysisResult.EndingCapital }}</div>
+            </div>
+        </div>
+    </section>
+    {{ end }}
+
+    {{ if .EmptyMessage }}
+    <div class="rounded border border-gray-200 bg-white p-6 text-sm text-gray-600">
+        {{ .EmptyMessage }}
+    </div>
+    {{ else }}
+
+    {{ $summary := .AnalysisResult.ExposureSummary }}
+    {{ $analysis := .AnalysisResult.ExposureAnalysis }}
+
+    <section class="mb-8">
+        <h2 class="text-lg font-semibold mb-4">Strategy Exposure Summary</h2>
+
+        <div class="space-y-6">
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                <h3 class="font-medium text-gray-800">Exposure Overlap (hours)</h3>
+                <div class="mt-3 overflow-x-auto">
+                    <table class="min-w-full text-xs border border-gray-200">
+                        <thead class="bg-gray-50">
+                        <tr>
+                            <th class="border px-2 py-1 text-left">Rank</th>
+                            <th class="border px-2 py-1 text-left">Strategy A</th>
+                            <th class="border px-2 py-1 text-left">Strategy B</th>
+                            <th class="border px-2 py-1 text-right">Overlap (hrs)</th>
+                            <th class="border px-2 py-1 text-right">Jaccard</th>
+                            <th class="border px-2 py-1 text-right">DD Coincidence (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD due to exposure (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD independent (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD attribution</th>
+                            <th class="border px-2 py-1 text-right">Exposure A (hrs)</th>
+                            <th class="border px-2 py-1 text-right">Exposure B (hrs)</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{ range $summary.TopByExposureOverlap }}
+                        <tr>
+                            <td class="border px-2 py-1">{{ .Rank }}</td>
+                            <td class="border px-2 py-1">{{ .StrategyA }}</td>
+                            <td class="border px-2 py-1">{{ .StrategyB }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureOverlapHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtPct .ExposureJaccard 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDCoincidenceHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDSimultaneousExposureHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDIndependentTimingHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtPct .DDCoincidenceAttribution 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureAHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureBHours 2 }}</td>
+                        </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                <h3 class="font-medium text-gray-800">Exposure Overlap (Jaccard)</h3>
+                <div class="mt-3 overflow-x-auto">
+                    <table class="min-w-full text-xs border border-gray-200">
+                        <thead class="bg-gray-50">
+                        <tr>
+                            <th class="border px-2 py-1 text-left">Rank</th>
+                            <th class="border px-2 py-1 text-left">Strategy A</th>
+                            <th class="border px-2 py-1 text-left">Strategy B</th>
+                            <th class="border px-2 py-1 text-right">Overlap (hrs)</th>
+                            <th class="border px-2 py-1 text-right">Jaccard</th>
+                            <th class="border px-2 py-1 text-right">DD Coincidence (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD due to exposure (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD independent (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD attribution</th>
+                            <th class="border px-2 py-1 text-right">Exposure A (hrs)</th>
+                            <th class="border px-2 py-1 text-right">Exposure B (hrs)</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{ range $summary.TopByExposureJaccard }}
+                        <tr>
+                            <td class="border px-2 py-1">{{ .Rank }}</td>
+                            <td class="border px-2 py-1">{{ .StrategyA }}</td>
+                            <td class="border px-2 py-1">{{ .StrategyB }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureOverlapHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtPct .ExposureJaccard 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDCoincidenceHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDSimultaneousExposureHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDIndependentTimingHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtPct .DDCoincidenceAttribution 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureAHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureBHours 2 }}</td>
+                        </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                <h3 class="font-medium text-gray-800">Drawdown Coincidence (hours)</h3>
+                <div class="mt-3 overflow-x-auto">
+                    <table class="min-w-full text-xs border border-gray-200">
+                        <thead class="bg-gray-50">
+                        <tr>
+                            <th class="border px-2 py-1 text-left">Rank</th>
+                            <th class="border px-2 py-1 text-left">Strategy A</th>
+                            <th class="border px-2 py-1 text-left">Strategy B</th>
+                            <th class="border px-2 py-1 text-right">Overlap (hrs)</th>
+                            <th class="border px-2 py-1 text-right">Jaccard</th>
+                            <th class="border px-2 py-1 text-right">DD Coincidence (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD due to exposure (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD independent (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD attribution</th>
+                            <th class="border px-2 py-1 text-right">Exposure A (hrs)</th>
+                            <th class="border px-2 py-1 text-right">Exposure B (hrs)</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{ range $summary.TopByDDCoincidence }}
+                        <tr>
+                            <td class="border px-2 py-1">{{ .Rank }}</td>
+                            <td class="border px-2 py-1">{{ .StrategyA }}</td>
+                            <td class="border px-2 py-1">{{ .StrategyB }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureOverlapHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtPct .ExposureJaccard 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDCoincidenceHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDSimultaneousExposureHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDIndependentTimingHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtPct .DDCoincidenceAttribution 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureAHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureBHours 2 }}</td>
+                        </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                <h3 class="font-medium text-gray-800">Coincident DD attributable to simultaneous exposure (hours)</h3>
+                <div class="mt-3 overflow-x-auto">
+                    <table class="min-w-full text-xs border border-gray-200">
+                        <thead class="bg-gray-50">
+                        <tr>
+                            <th class="border px-2 py-1 text-left">Rank</th>
+                            <th class="border px-2 py-1 text-left">Strategy A</th>
+                            <th class="border px-2 py-1 text-left">Strategy B</th>
+                            <th class="border px-2 py-1 text-right">Overlap (hrs)</th>
+                            <th class="border px-2 py-1 text-right">Jaccard</th>
+                            <th class="border px-2 py-1 text-right">DD Coincidence (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD due to exposure (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD independent (hrs)</th>
+                            <th class="border px-2 py-1 text-right">DD attribution</th>
+                            <th class="border px-2 py-1 text-right">Exposure A (hrs)</th>
+                            <th class="border px-2 py-1 text-right">Exposure B (hrs)</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{ range $summary.TopByDDSimExposure }}
+                        <tr>
+                            <td class="border px-2 py-1">{{ .Rank }}</td>
+                            <td class="border px-2 py-1">{{ .StrategyA }}</td>
+                            <td class="border px-2 py-1">{{ .StrategyB }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureOverlapHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtPct .ExposureJaccard 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDCoincidenceHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDSimultaneousExposureHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .DDIndependentTimingHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtPct .DDCoincidenceAttribution 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureAHours 2 }}</td>
+                            <td class="border px-2 py-1 text-right">{{ fmtFloat .ExposureBHours 2 }}</td>
+                        </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="mb-8">
+        <h2 class="text-lg font-semibold mb-4">Strategy Exposure Analysis</h2>
+
+        <div class="space-y-6">
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                <h3 class="font-medium text-gray-800">Active Exposure Overlap (hours)</h3>
+                <div class="mt-3 overflow-x-auto">
+                    {{ template "matrix" (dict "Matrix" $analysis.ExposureOverlapHours "HeatmapType" "") }}
+                </div>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                <h3 class="font-medium text-gray-800">Active Exposure Overlap (Jaccard %)</h3>
+                <div class="mt-3 overflow-x-auto">
+                    {{ template "matrix" (dict "Matrix" $analysis.ExposureJaccardPct "HeatmapType" "jaccard") }}
+                </div>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                <h3 class="font-medium text-gray-800">Drawdown Coincidence (hours both under-water)</h3>
+                <div class="mt-3 overflow-x-auto">
+                    {{ template "matrix" (dict "Matrix" $analysis.DDCoincidenceHours "HeatmapType" "") }}
+                </div>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-white p-4">
+                <h3 class="font-medium text-gray-800">Coincident DD attribution (% during simultaneous exposure)</h3>
+                <div class="mt-3 overflow-x-auto">
+                    {{ template "matrix" (dict "Matrix" $analysis.DDCoincidenceAttrib "HeatmapType" "attrib") }}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {{ if $analysis.DerivedRiskScore }}
+    <section class="mb-8">
+        <h2 class="text-lg font-semibold mb-4">Derived Risk Score</h2>
+        <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 class="font-medium text-gray-800">Exposure Jaccard × DD Attribution</h3>
+            <div class="mt-3 overflow-x-auto">
+                {{ template "matrix" (dict "Matrix" $analysis.DerivedRiskScore "HeatmapType" "risk") }}
+            </div>
+        </div>
+    </section>
+    {{ end }}
+
+    {{ end }}
+</main>
+
+{{ define "matrix" }}
+{{ $m := .Matrix }}
+{{ $type := .HeatmapType }}
+<table class="matrix-table min-w-full text-xs border border-gray-200" {{ if $type }}data-heatmap="{{ $type }}"{{ end }}>
+    <thead>
+    <tr>
+        <th class="border px-2 py-1 text-left"></th>
+        {{ range $m.Strategies }}
+        <th class="border px-2 py-1 text-left">{{ . }}</th>
+        {{ end }}
+    </tr>
+    </thead>
+    <tbody>
+    {{ range $i, $row := $m.Values }}
+    <tr>
+        <th class="border px-2 py-1 text-left">{{ index $m.Strategies $i }}</th>
+        {{ range $row }}
+        <td class="border px-2 py-1 text-right">{{ . }}</td>
+        {{ end }}
+    </tr>
+    {{ end }}
+    </tbody>
+</table>
+{{ end }}
+<script>
+    window.addEventListener("load", () => {
+        const exportBtn = document.getElementById("strat-exposure-export");
+        if (exportBtn) {
+            exportBtn.addEventListener("click", () => {
+                const tables = Array.from(document.querySelectorAll("main table"));
+                if (!tables.length) return;
+
+                const escapeCell = (value) => {
+                    const text = String(value ?? "").replace(/\r?\n/g, " ").trim();
+                    return `"${text.replace(/"/g, '""')}"`;
+                };
+
+                const findTitle = (table) => {
+                    let el = table.parentElement;
+                    while (el) {
+                        const h3 = el.querySelector("h3");
+                        if (h3 && h3.textContent) return h3.textContent.trim();
+                        const h2 = el.querySelector("h2");
+                        if (h2 && h2.textContent) return h2.textContent.trim();
+                        el = el.parentElement;
+                    }
+                    return "Exposure Table";
+                };
+
+                const lines = [];
+                tables.forEach((table, index) => {
+                    const title = findTitle(table) || `Table ${index + 1}`;
+                    if (lines.length) lines.push("");
+                    lines.push(escapeCell(`=== ${title} ===`));
+
+                    const rows = Array.from(table.querySelectorAll("tr"));
+                    rows.forEach(row => {
+                        const cells = Array.from(row.querySelectorAll("th, td"));
+                        if (!cells.length) return;
+                        lines.push(cells.map(cell => escapeCell(cell.textContent)).join(","));
+                    });
+                });
+
+                const csv = lines.join("\n");
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = "strat_exposure.csv";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+        }
+
+        // eslint-disable-next-line
+        const spec = {{ toJSON .AnalysisResult.ExposureHeatmapSpec }};
+        if (!spec) return;
+
+        const tables = document.querySelectorAll("table[data-heatmap]");
+        if (!tables.length) return;
+
+        const hexToRgb = (hex) => {
+            const cleaned = hex.replace("#", "");
+            const bigint = parseInt(cleaned, 16);
+            return {
+                r: (bigint >> 16) & 255,
+                g: (bigint >> 8) & 255,
+                b: bigint & 255
+            };
+        };
+
+        const rgbToHex = ({ r, g, b }) => {
+            const toHex = (v) => v.toString(16).padStart(2, "0");
+            return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+        };
+
+        const lerp = (a, b, t) => a + (b - a) * t;
+
+        const blend = (from, to, t) => {
+            const a = hexToRgb(from);
+            const b = hexToRgb(to);
+            return rgbToHex({
+                r: Math.round(lerp(a.r, b.r, t)),
+                g: Math.round(lerp(a.g, b.g, t)),
+                b: Math.round(lerp(a.b, b.b, t))
+            });
+        };
+
+        const colorFor = (value, min, mid, max) => {
+            if (!Number.isFinite(value)) return "";
+            if (value <= min) return "#b7e1cd";
+            if (value >= max) return "#f4c7c3";
+            if (value <= mid) {
+                const t = (value - min) / (mid - min || 1);
+                return blend("#b7e1cd", "#fff2cc", t);
+            }
+            const t = (value - mid) / (max - mid || 1);
+            return blend("#fff2cc", "#f4c7c3", t);
+        };
+
+        const parseValue = (text) => {
+            const raw = (text || "").trim();
+            if (!raw || raw === "—") return NaN;
+            const hasPct = raw.includes("%");
+            const cleaned = raw.replace(/[^0-9.-]/g, "");
+            const parsed = Number.parseFloat(cleaned);
+            if (!Number.isFinite(parsed)) return NaN;
+            return hasPct ? parsed / 100 : parsed;
+        };
+
+        tables.forEach(table => {
+            const type = table.dataset.heatmap;
+            let min = 0;
+            let mid = 0;
+            let max = 0;
+
+            if (type === "jaccard") {
+                min = 0;
+                mid = spec.jaccard_mid;
+                max = spec.jaccard_max;
+            } else if (type === "attrib") {
+                min = 0;
+                mid = spec.dd_attrib_mid;
+                max = spec.dd_attrib_max;
+            } else if (type === "risk") {
+                min = 0;
+                mid = spec.risk_mid;
+                max = spec.risk_max;
+            } else {
+                return;
+            }
+
+            const rows = Array.from(table.querySelectorAll("tbody tr"));
+            rows.forEach((row, rowIndex) => {
+                const cells = Array.from(row.querySelectorAll("td"));
+                cells.forEach((cell, colIndex) => {
+                    if (rowIndex === colIndex) {
+                        cell.style.backgroundColor = "";
+                        return;
+                    }
+                    const value = parseValue(cell.textContent);
+                    const color = colorFor(value, min, mid, max);
+                    if (color) {
+                        cell.style.backgroundColor = color;
+                    }
+                });
+            });
+        });
+    });
+</script>
+</body>
+</html>

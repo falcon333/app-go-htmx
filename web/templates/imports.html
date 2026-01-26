@@ -29,36 +29,46 @@
         hx-swap="innerHTML"
         enctype="multipart/form-data"
     >
-        <div>
+        <div class="flex flex-wrap gap-4 text-sm">
+            <label class="inline-flex items-center gap-2">
+                <input type="radio" name="import_mode" value="url" checked>
+                Import by URL
+            </label>
+            <label class="inline-flex items-center gap-2">
+                <input type="radio" name="import_mode" value="file">
+                Upload File
+            </label>
+        </div>
+
+        <div id="import-url-section">
             <label class="block font-medium mb-1">Published CSV URL</label>
             <input
                 type="url"
                 name="csv_url"
                 value="{{ .CSVURL }}"
-                required
                 placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
                 class="w-full rounded border px-3 py-2 border-gray-300"
             />
         </div>
 
-        <div>
-            <label class="block font-medium mb-1">Or upload CSV/Excel</label>
+        <div id="import-file-section" class="hidden">
+            <label class="block font-medium mb-1">Upload CSV/Excel</label>
             <input
                 type="file"
                 name="upload_file"
                 accept=".csv,.xls,.xlsx"
                 class="w-full rounded border px-3 py-2 border-gray-300"
             />
-            <p class="text-xs text-gray-500 mt-1">Upload a local file instead of using a URL.</p>
+            <p class="text-xs text-gray-500 mt-1">Strategy name is auto-deduced from the filename.</p>
+            <p class="text-xs text-gray-500" id="derived-strategy" aria-live="polite"></p>
         </div>
 
-        <div>
+        <div id="import-strategy-section">
             <label class="block font-medium mb-1">Strategy Name</label>
             <input
                 type="text"
                 name="strategy_name"
                 value="{{ .Strategy }}"
-                required
                 placeholder="RSI-MES1!-60"
                 class="w-full rounded border px-3 py-2 border-gray-300"
             />
@@ -153,7 +163,61 @@
             </div>
         {{ end }}
     {{ else }}
-        <p class="text-sm text-gray-500">Submit a CSV URL to import trades.</p>
+        <p class="text-sm text-gray-500">Submit a CSV URL or upload a file to import trades.</p>
     {{ end }}
 </div>
 {{ end }}
+
+<script>
+    (function () {
+        const urlSection = document.getElementById("import-url-section");
+        const fileSection = document.getElementById("import-file-section");
+        const strategySection = document.getElementById("import-strategy-section");
+        const urlInput = document.querySelector("input[name='csv_url']");
+        const strategyInput = document.querySelector("input[name='strategy_name']");
+        const fileInput = document.querySelector("input[name='upload_file']");
+        const derivedEl = document.getElementById("derived-strategy");
+        const radios = Array.from(document.querySelectorAll("input[name='import_mode']"));
+
+        const deduceStrategy = (filename) => {
+            if (!filename) return "";
+            const parts = filename.split("/").pop().split("\\").pop();
+            let base = parts.replace(/\.(csv|xls|xlsx)$/i, "");
+            const lastUnderscore = base.lastIndexOf("_");
+            if (lastUnderscore > -1) {
+                const token = base.slice(lastUnderscore + 1);
+                if (/^w?\d+(\.\d+)?$/i.test(token)) {
+                    base = base.slice(0, lastUnderscore);
+                }
+            }
+            return base.trim();
+        };
+
+        const setMode = (mode) => {
+            const isFile = mode === "file";
+            if (urlSection) urlSection.classList.toggle("hidden", isFile);
+            if (fileSection) fileSection.classList.toggle("hidden", !isFile);
+            if (strategySection) strategySection.classList.toggle("hidden", isFile);
+            if (urlInput) urlInput.required = !isFile;
+            if (strategyInput) strategyInput.required = !isFile;
+        };
+
+        const updateDerived = () => {
+            if (!fileInput || !derivedEl) return;
+            const file = fileInput.files && fileInput.files[0];
+            const name = file ? deduceStrategy(file.name) : "";
+            derivedEl.textContent = name ? `Derived strategy: ${name}` : "";
+        };
+
+        radios.forEach(radio => {
+            radio.addEventListener("change", () => setMode(radio.value));
+        });
+
+        if (fileInput) {
+            fileInput.addEventListener("change", updateDerived);
+        }
+
+        setMode("url");
+        updateDerived();
+    })();
+</script>

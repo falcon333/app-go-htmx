@@ -28,6 +28,7 @@ type StrategySummaryRow struct {
 	Strategy       string  `json:"strategy"`
 	Trades         int     `json:"trades"`
 	NetGain        float64 `json:"net_gain"`
+	NetGainUsd     float64 `json:"net_gain_usd"`
 	CAGR           float64 `json:"cagr"`
 	MaxDrawdown    float64 `json:"max_drawdown"`
 	WinRate        float64 `json:"win_rate"`
@@ -49,6 +50,7 @@ type PairSummaryRow struct {
 	Pair           string  `json:"pair"`
 	Trades         int     `json:"trades"`
 	NetGain        float64 `json:"net_gain"`
+	NetGainUsd     float64 `json:"net_gain_usd"`
 	CAGR           float64 `json:"cagr"`
 	MaxDrawdown    float64 `json:"max_drawdown"`
 	WinRate        float64 `json:"win_rate"`
@@ -165,6 +167,9 @@ func buildStrategySummary(trades []SummaryTradeRow, startingBalance float64, wei
 		b2 := initBal
 		peakB := b2
 		minDD := 0.0
+		equityPnl := 0.0
+		peakEquity := 0.0
+		minDdUsdEquity := 0.0
 		ddPos := make([]float64, 0, len(pcts))
 		eqSeries := make([]float64, 0, len(pcts))
 		underCnt := 0
@@ -188,6 +193,17 @@ func buildStrategySummary(trades []SummaryTradeRow, startingBalance float64, wei
 				continue
 			}
 
+			if isFinite(xk) {
+				equityPnl += xk
+				if equityPnl > peakEquity {
+					peakEquity = equityPnl
+				}
+				ddAmt := equityPnl - peakEquity
+				if ddAmt < minDdUsdEquity {
+					minDdUsdEquity = ddAmt
+				}
+			}
+
 			eqSeries = append(eqSeries, b2)
 			currDate := dates[i]
 
@@ -204,7 +220,6 @@ func buildStrategySummary(trades []SummaryTradeRow, startingBalance float64, wei
 					currentDDStart = &tmp
 				}
 			}
-
 			dd2 := 0.0
 			if peakB != 0 {
 				dd2 = (b2 - peakB) / peakB
@@ -241,9 +256,14 @@ func buildStrategySummary(trades []SummaryTradeRow, startingBalance float64, wei
 			continue
 		}
 
+		netUsd := totalPnl
 		net := 0.0
 		if initBal > 0 {
-			net = (b2 / initBal) - 1
+			net = netUsd / initBal
+		}
+		maxDdPct := 0.0
+		if initBal > 0 {
+			maxDdPct = minDdUsdEquity / initBal
 		}
 
 		yrs := math.Max(dates[len(dates)-1].Sub(dates[0]).Hours()/24/365.25, 0)
@@ -277,17 +297,18 @@ func buildStrategySummary(trades []SummaryTradeRow, startingBalance float64, wei
 		}
 
 		avgDDDays := avgFloat64(ddDurations)
-		recScore := CalculateRecoveryScore(net*100, math.Abs(minDD)*100, avgDDDays)
+		recScore := CalculateRecoveryScore(net*100, math.Abs(maxDdPct)*100, avgDDDays)
 		sleepWell := CalculateSleepWellScore(cagr, r2, ulcer)
 		expectancy := totalPnl / float64(tradesCount)
-		scorecard := CalculateStrategyScorecard(r2, net, math.Abs(minDD), pf, expectancy, weights)
+		scorecard := CalculateStrategyScorecard(r2, net, math.Abs(maxDdPct), pf, expectancy, weights)
 
 		rows = append(rows, StrategySummaryRow{
 			Strategy:       name,
 			Trades:         tradesCount,
 			NetGain:        normalizeFloat(net),
+			NetGainUsd:     normalizeFloat(netUsd),
 			CAGR:           normalizeFloat(cagr),
-			MaxDrawdown:    normalizeFloat(minDD),
+			MaxDrawdown:    normalizeFloat(maxDdPct),
 			WinRate:        normalizeFloat(winRate),
 			AvgReturn:      normalizeFloat(avgReturn),
 			RiskReward:     normalizeFloat(rr),
@@ -414,6 +435,9 @@ func buildPairSummary(trades []SummaryTradeRow, startingBalance float64, weights
 		b2 := initBal
 		peakB := b2
 		minDD := 0.0
+		equityPnl := 0.0
+		peakEquity := 0.0
+		minDdUsdEquity := 0.0
 		ddPos := make([]float64, 0, len(pcts))
 		eqSeries := make([]float64, 0, len(pcts))
 		underCnt := 0
@@ -430,6 +454,17 @@ func buildPairSummary(trades []SummaryTradeRow, startingBalance float64, weights
 				pcts[i] = pk
 			} else {
 				continue
+			}
+
+			if isFinite(xk) {
+				equityPnl += xk
+				if equityPnl > peakEquity {
+					peakEquity = equityPnl
+				}
+				ddAmt := equityPnl - peakEquity
+				if ddAmt < minDdUsdEquity {
+					minDdUsdEquity = ddAmt
+				}
 			}
 			eqSeries = append(eqSeries, b2)
 			if b2 > peakB {
@@ -466,9 +501,14 @@ func buildPairSummary(trades []SummaryTradeRow, startingBalance float64, weights
 			continue
 		}
 
+		netUsd := totalPnl
 		net := 0.0
 		if initBal > 0 {
-			net = (b2 / initBal) - 1
+			net = netUsd / initBal
+		}
+		maxDdPct := 0.0
+		if initBal > 0 {
+			maxDdPct = minDdUsdEquity / initBal
 		}
 
 		yrs := math.Max(dates[len(dates)-1].Sub(dates[0]).Hours()/24/365.25, 0)
@@ -502,15 +542,16 @@ func buildPairSummary(trades []SummaryTradeRow, startingBalance float64, weights
 		}
 
 		expectancy := totalPnl / float64(tradesCount)
-		scorecard := CalculateStrategyScorecard(r2, net, math.Abs(minDD), pf, expectancy, weights)
+		scorecard := CalculateStrategyScorecard(r2, net, math.Abs(maxDdPct), pf, expectancy, weights)
 		sleepWell := CalculateSleepWellScore(cagr, r2, ulcer)
 
 		rows = append(rows, PairSummaryRow{
 			Pair:           name,
 			Trades:         tradesCount,
 			NetGain:        normalizeFloat(net),
+			NetGainUsd:     normalizeFloat(netUsd),
 			CAGR:           normalizeFloat(cagr),
-			MaxDrawdown:    normalizeFloat(minDD),
+			MaxDrawdown:    normalizeFloat(maxDdPct),
 			WinRate:        normalizeFloat(winRate),
 			AvgReturn:      normalizeFloat(avgReturn),
 			RiskReward:     normalizeFloat(rr),

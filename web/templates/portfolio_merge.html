@@ -28,6 +28,20 @@
                 height: 320px;
             }
         }
+        .summary-table .summary-col-optional {
+            display: none;
+        }
+        @media (min-width: 640px) {
+            .summary-table .summary-col-optional {
+                display: table-cell;
+            }
+        }
+        .summary-expanded .summary-col-optional {
+            display: table-cell;
+        }
+        .summary-skeleton-row {
+            height: 36px;
+        }
     </style>
 </head>
 
@@ -38,6 +52,7 @@
         <div class="space-x-3 text-sm">
             <a class="text-blue-600 hover:underline" href="/imports/trades">Import</a>
             <a class="text-blue-600 hover:underline" href="/import/batch">Batch import</a>
+            <a class="text-blue-600 hover:underline" href="/strat-exposure{{ if .AnalysisPortfolio }}?portfolio={{ urlquery .AnalysisPortfolio }}{{ end }}">StratExposure</a>
             <a class="text-blue-600 hover:underline" href="/portfolio">Back to portfolio</a>
         </div>
     </div>
@@ -54,6 +69,7 @@
     </div>
     {{ end }}
 
+    <form id="portfolio-load-form" method="get" action="/portfolios/merge"></form>
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div class="lg:col-span-2">
             <form class="bg-white rounded-lg shadow p-6" method="post" action="/portfolios/merge">
@@ -61,14 +77,15 @@
                 <div class="flex flex-wrap items-center gap-3">
                     <div class="flex items-center gap-2">
                         <label class="text-sm font-medium">Load</label>
-                        <select id="portfolio-load" class="rounded border px-2 py-2 text-sm">
+                        <select id="portfolio-load" name="portfolio" form="portfolio-load-form" class="rounded border px-2 py-2 text-sm">
                             <option value="">Select portfolio...</option>
                             {{ range .PortfolioItems }}
                                 <option value="{{ .Name }}" {{ if eq $.PortfolioSelected .Name }}selected{{ end }}>{{ .Name }}</option>
                             {{ end }}
                         </select>
                     </div>
-                    <button type="button" id="portfolio-manage" class="rounded border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50">Manage</button>
+                    <button type="submit" form="portfolio-load-form" id="portfolio-load-btn" class="rounded border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50">Load</button>
+                    <button type="button" id="portfolio-manage" class="rounded border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50" onclick="document.getElementById('portfolio-manage-modal')?.classList.remove('hidden')">Manage</button>
 
                     <div class="flex-1 min-w-[240px]">
                         <label class="block text-sm font-medium mb-1">Portfolio Name</label>
@@ -100,7 +117,13 @@
                         <thead class="bg-gray-50">
                         <tr>
                             <th class="border px-3 py-2 text-left">Key</th>
-                            <th class="border px-3 py-2 text-left">Enabled</th>
+                            <th class="border px-3 py-2 text-left">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span>Enabled</span>
+                                    <button type="button" id="enabled-all" class="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50">Enable All</button>
+                                    <button type="button" id="disabled-all" class="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50">Disable All</button>
+                                </div>
+                            </th>
                             <th class="border px-3 py-2 text-left">Weight</th>
                             <th class="border px-3 py-2 text-left">Ratio Mode</th>
                             <th class="border px-3 py-2 text-left">Ratio Unit</th>
@@ -139,6 +162,21 @@
                     </table>
                 </div>
             </form>
+            <script>
+                window.setAllEnabled = (value) => {
+                    document.querySelectorAll("tbody input[name$='.enabled']").forEach(el => {
+                        el.checked = value;
+                        el.dispatchEvent(new Event("change", { bubbles: true }));
+                    });
+                };
+
+                window.addEventListener("load", () => {
+                    const enableAllBtn = document.getElementById("enabled-all");
+                    const disableAllBtn = document.getElementById("disabled-all");
+                    if (enableAllBtn) enableAllBtn.addEventListener("click", () => window.setAllEnabled(true));
+                    if (disableAllBtn) disableAllBtn.addEventListener("click", () => window.setAllEnabled(false));
+                });
+            </script>
         </div>
 
         <aside class="bg-gray-50 rounded-lg shadow p-6">
@@ -216,8 +254,191 @@
             </div>
         </div>
 
+        {{ $strategyRows := .AnalysisResult.StrategySummary }}
+        {{ $pairRows := .AnalysisResult.PairSummary }}
+        <div id="summaries-section" class="mt-4 space-y-4">
+            <div class="rounded-lg border border-gray-200 bg-white p-4 text-sm">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <div class="text-sm font-medium text-gray-800">Strategy Summary</div>
+                        <div class="text-xs text-gray-500">Updated with latest dashboard run.</div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                        <div class="text-gray-500">Rows: <span id="strategy-summary-count">{{ len $strategyRows }}</span></div>
+                        <input id="strategy-summary-search" class="rounded border border-gray-200 px-2 py-1 text-xs" type="text" placeholder="Search strategy or tier">
+                        <button id="strategy-summary-export" type="button" class="rounded border border-gray-200 px-2 py-1 text-xs hover:bg-gray-50">Export CSV</button>
+                    </div>
+                </div>
+
+                <div class="summary-loading hidden mt-3" data-summary-loading="strategy">
+                    <div class="space-y-2">
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                    </div>
+                </div>
+
+                {{ if .AnalysisResult.SummaryError }}
+                    <div class="mt-3 text-sm text-red-600">Unable to load summary data. Please retry Update Dashboard.</div>
+                {{ else if not $strategyRows }}
+                    <div class="mt-3 text-sm text-gray-500">No summary data yet. Run Update Dashboard.</div>
+                {{ else }}
+                    <div class="mt-3 summary-table-wrap" data-summary-table="strategy">
+                        <div class="overflow-x-auto summary-table-container">
+                            <table id="strategy-summary-table" class="summary-table min-w-full text-xs border border-gray-200">
+                                <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="border px-2 py-1 text-left cursor-pointer select-none" data-col="name" data-type="string" aria-sort="none">Strategy <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="trades" data-type="number" aria-sort="none">Trades <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="win_rate" data-type="number" aria-sort="none">Win% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="net_usd" data-type="number" aria-sort="none">Net $ Gain <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="net" data-type="number" aria-sort="none">Net Gain % <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="cagr" data-type="number" aria-sort="none">CAGR <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="max_dd" data-type="number" aria-sort="none">MaxDD% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_return" data-type="number" aria-sort="none">Avg Return <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="risk_reward" data-type="number" aria-sort="none">R:R <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="profit_factor" data-type="number" aria-sort="none">PF <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="ulcer" data-type="number" aria-sort="none">Ulcer Index <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="r2" data-type="number" aria-sort="none">Equity R² <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="tuw" data-type="number" aria-sort="none">TUW <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="scorecard" data-type="number" aria-sort="none">Scorecard <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="sleep_well" data-type="number" aria-sort="none">Sleep Well Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_dd_days" data-type="number" aria-sort="none">Avg DD Days <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="recovery" data-type="number" aria-sort="none">Rec Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-left cursor-pointer select-none" data-col="tier" data-type="string" aria-sort="none">Tier <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="allocation" data-type="number" aria-sort="none">alloc <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                {{ range $strategyRows }}
+                                {{ $isElite := eq .Tier "Elite (Top 20%)" }}
+                                <tr class="odd:bg-white even:bg-gray-50 {{ if $isElite }}bg-emerald-50{{ end }}" data-name="{{ .Strategy }}" data-tier="{{ .Tier }}">
+                                    <td class="border px-2 py-1 text-left" data-value="{{ .Strategy }}">{{ .Strategy }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .Trades }}">{{ .Trades }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .WinRate }}">{{ printf "%.2f%%" (pct .WinRate) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .NetGainUsd }}">{{ printf "$%.2f" .NetGainUsd }}</td>
+                                    <td class="border px-2 py-1 text-right {{ if gt .NetGain 0.0 }}text-emerald-700{{ else if lt .NetGain 0.0 }}text-red-600{{ end }}" data-value="{{ .NetGain }}">{{ printf "%.2f%%" (pct .NetGain) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .CAGR }}">{{ printf "%.2f%%" (pct .CAGR) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right {{ if lt .MaxDrawdown 0.0 }}text-red-600{{ end }}" data-value="{{ .MaxDrawdown }}">{{ printf "%.2f%%" (pct .MaxDrawdown) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .AvgReturn }}">{{ printf "%.2f%%" (pct .AvgReturn) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .RiskReward }}">{{ printf "%.1f" .RiskReward }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .ProfitFactor }}">{{ printf "%.1f" .ProfitFactor }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .UlcerIndex }}">{{ printf "%.2f" .UlcerIndex }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .EquityR2 }}">{{ printf "%.2f" .EquityR2 }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .TimeUnderWater }}">{{ printf "%.2f%%" (pct .TimeUnderWater) }}</td>
+                                    <td class="border px-2 py-1 text-right {{ if $isElite }}bg-emerald-100{{ end }}" data-value="{{ .Scorecard }}">{{ printf "%.1f" .Scorecard }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .SleepWell }}">{{ printf "%.1f" .SleepWell }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .AvgDDDays }}">{{ printf "%.1f" .AvgDDDays }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .RecoveryScore }}">{{ printf "%.1f" .RecoveryScore }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-left" data-value="{{ .Tier }}">{{ .Tier }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .Allocation }}">{{ printf "%.4f" .Allocation }}</td>
+                                </tr>
+                                {{ end }}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="summary-toggle mt-2 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 sm:hidden" data-summary-toggle="strategy">Expand table</button>
+                    </div>
+                {{ end }}
+            </div>
+
+            <div class="rounded-lg border border-gray-200 bg-white p-4 text-sm">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <div class="text-sm font-medium text-gray-800">Pair Summary</div>
+                        <div class="text-xs text-gray-500">Updated with latest dashboard run.</div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                        <div class="text-gray-500">Rows: <span id="pair-summary-count">{{ len $pairRows }}</span></div>
+                        <input id="pair-summary-search" class="rounded border border-gray-200 px-2 py-1 text-xs" type="text" placeholder="Search pair">
+                        <button id="pair-summary-export" type="button" class="rounded border border-gray-200 px-2 py-1 text-xs hover:bg-gray-50">Export CSV</button>
+                    </div>
+                </div>
+
+                <div class="summary-loading hidden mt-3" data-summary-loading="pair">
+                    <div class="space-y-2">
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                    </div>
+                </div>
+
+                {{ if .AnalysisResult.SummaryError }}
+                    <div class="mt-3 text-sm text-red-600">Unable to load summary data. Please retry Update Dashboard.</div>
+                {{ else if not $pairRows }}
+                    <div class="mt-3 text-sm text-gray-500">No summary data yet. Run Update Dashboard.</div>
+                {{ else }}
+                    <div class="mt-3 summary-table-wrap" data-summary-table="pair">
+                        <div class="overflow-x-auto summary-table-container">
+                            <table id="pair-summary-table" class="summary-table min-w-full text-xs border border-gray-200">
+                                <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="border px-2 py-1 text-left cursor-pointer select-none" data-col="name" data-type="string" aria-sort="none">Currency Pair <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="trades" data-type="number" aria-sort="none">Trades <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="win_rate" data-type="number" aria-sort="none">Win% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="net_usd" data-type="number" aria-sort="none">Net $ Gain <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="net" data-type="number" aria-sort="none">Net Gain % <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="cagr" data-type="number" aria-sort="none">CAGR <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="max_dd" data-type="number" aria-sort="none">MaxDD% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_return" data-type="number" aria-sort="none">Avg Return <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="risk_reward" data-type="number" aria-sort="none">R:R <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="profit_factor" data-type="number" aria-sort="none">PF <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="ulcer" data-type="number" aria-sort="none">Ulcer Index <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="r2" data-type="number" aria-sort="none">Equity R² <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="tuw" data-type="number" aria-sort="none">TUW <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="scorecard" data-type="number" aria-sort="none">Scorecard <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="sleep_well" data-type="number" aria-sort="none">Sleep Well Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                {{ range $pairRows }}
+                                <tr class="odd:bg-white even:bg-gray-50" data-name="{{ .Pair }}">
+                                    <td class="border px-2 py-1 text-left" data-value="{{ .Pair }}">{{ .Pair }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .Trades }}">{{ .Trades }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .WinRate }}">{{ printf "%.2f%%" (pct .WinRate) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .NetGainUsd }}">{{ printf "$%.2f" .NetGainUsd }}</td>
+                                    <td class="border px-2 py-1 text-right {{ if gt .NetGain 0.0 }}text-emerald-700{{ else if lt .NetGain 0.0 }}text-red-600{{ end }}" data-value="{{ .NetGain }}">{{ printf "%.2f%%" (pct .NetGain) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .CAGR }}">{{ printf "%.2f%%" (pct .CAGR) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right {{ if lt .MaxDrawdown 0.0 }}text-red-600{{ end }}" data-value="{{ .MaxDrawdown }}">{{ printf "%.2f%%" (pct .MaxDrawdown) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .AvgReturn }}">{{ printf "%.2f%%" (pct .AvgReturn) }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .RiskReward }}">{{ printf "%.1f" .RiskReward }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .ProfitFactor }}">{{ printf "%.1f" .ProfitFactor }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .UlcerIndex }}">{{ printf "%.2f" .UlcerIndex }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .EquityR2 }}">{{ printf "%.2f" .EquityR2 }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .TimeUnderWater }}">{{ printf "%.2f%%" (pct .TimeUnderWater) }}</td>
+                                    <td class="border px-2 py-1 text-right" data-value="{{ .Scorecard }}">{{ printf "%.1f" .Scorecard }}</td>
+                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .SleepWell }}">{{ printf "%.1f" .SleepWell }}</td>
+                                </tr>
+                                {{ end }}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="summary-toggle mt-2 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 sm:hidden" data-summary-toggle="pair">Expand table</button>
+                    </div>
+                {{ end }}
+            </div>
+        </div>
+
         <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
             <div class="font-medium text-gray-800">Charts</div>
+            <div class="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                <label class="inline-flex items-center gap-2">
+                    <input id="analysis-charts-enabled" name="analysis_charts_enabled" type="checkbox" form="analysis-form" {{ if .ChartsEnabled }}checked{{ end }}>
+                    <span>Enable charts</span>
+                </label>
+                <label class="inline-flex items-center gap-2">
+                    <span>Auto-load if enabled strategies ≤</span>
+                    <input id="analysis-charts-threshold" name="analysis_charts_threshold" type="number" min="1" step="1" form="analysis-form" value="{{ .ChartThreshold }}" class="w-16 rounded border border-gray-200 px-2 py-1 text-xs">
+                </label>
+                <span class="text-gray-500">Enabled: {{ .ChartEnabledCount }}</span>
+                {{ if .ChartsAutoEnabled }}
+                    <span class="rounded bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700">Auto-enabled</span>
+                {{ end }}
+            </div>
             <div class="mt-2 flex flex-wrap items-center gap-2">
                 <div class="inline-flex rounded border border-gray-200 bg-gray-50 p-1 text-xs">
                 <a href="{{ .ChartLinkJS }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "chartjs" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">chartjs</a>
@@ -273,8 +494,10 @@
                 </div>
                 <script type="application/json" id="chart-data">{{ toJSON .AnalysisResult.ChartData }}</script>
                 {{ end }}
-            {{ else }}
+            {{ else if .ChartsEnabled }}
                 <div class="mt-2 text-gray-500">No data to chart</div>
+            {{ else }}
+                <div class="mt-2 text-gray-500">Charts disabled (enable to render).</div>
             {{ end }}
         </div>
 
@@ -282,17 +505,17 @@
         <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
             <div class="font-medium text-gray-800 mb-2">Filtered Trades</div>
             <div class="max-h-64 overflow-auto">
-                <table class="min-w-full text-xs border border-gray-200">
+                <table id="filtered-trades-table" class="min-w-full text-xs border border-gray-200">
                     <thead class="bg-gray-50">
                     <tr>
-                        <th class="border px-2 py-1 text-left">Strategy</th>
-                        <th class="border px-2 py-1 text-left">Direction</th>
-                        <th class="border px-2 py-1 text-left">EnT</th>
-                        <th class="border px-2 py-1 text-left">EnP</th>
-                        <th class="border px-2 py-1 text-left">ExT</th>
-                        <th class="border px-2 py-1 text-left">ExP</th>
-                        <th class="border px-2 py-1 text-left">Net PnL</th>
-                        <th class="border px-2 py-1 text-left">Weighted PnL</th>
+                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="strategy" data-type="string" aria-sort="none">Strategy <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="direction" data-type="string" aria-sort="none">Direction <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="entry_time" data-type="datetime" aria-sort="none">EnT <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="entry_price" data-type="number" aria-sort="none">EnP <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="exit_time" data-type="datetime" aria-sort="none">ExT <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="exit_price" data-type="number" aria-sort="none">ExP <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="net_pnl" data-type="number" aria-sort="none">Net PnL <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="weighted_pnl" data-type="number" aria-sort="none">Weighted PnL <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
                     </tr>
                     </thead>
                     <tbody>
@@ -321,7 +544,7 @@
     <div class="w-full max-w-2xl rounded-lg bg-white p-5 shadow-lg">
         <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold">Manage Portfolios</h2>
-            <button type="button" id="portfolio-manage-close" class="text-sm text-gray-500 hover:text-gray-700">Close</button>
+            <button type="button" id="portfolio-manage-close" class="text-sm text-gray-500 hover:text-gray-700" onclick="document.getElementById('portfolio-manage-modal')?.classList.add('hidden')">Close</button>
         </div>
 
         <div class="mt-4 max-h-[360px] overflow-auto">
@@ -342,8 +565,10 @@
                     <td class="border px-3 py-2">{{ .DateRange }}</td>
                     <td class="border px-3 py-2">
                         <div class="flex gap-2">
-                            <button type="button" class="portfolio-load-btn rounded border border-blue-200 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50" data-name="{{ .Name }}">Load</button>
-                            <button type="button" class="portfolio-delete-btn rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50" data-name="{{ .Name }}">Delete</button>
+                            <form method="post" action="/portfolios/merge/delete" onsubmit="return confirm('Delete portfolio {{ .Name }}?')">
+                                <input type="hidden" name="name" value="{{ .Name }}">
+                                <button type="submit" class="portfolio-delete-btn rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50">Delete</button>
+                            </form>
                         </div>
                     </td>
                 </tr>
@@ -405,6 +630,7 @@
                 add("ratio_amount", ratioAmount);
                 if (notes !== "") add("notes", notes);
             });
+
         }
 
         function submitWithMappings() {
@@ -521,9 +747,235 @@
         }
     })();
 </script>
+{{ if .AnalysisResult.Trades }}
+<script>
+    window.addEventListener("load", () => {
+        const table = document.getElementById("filtered-trades-table");
+        if (!table) return;
+
+        const tbody = table.querySelector("tbody");
+        const headers = Array.from(table.querySelectorAll("thead th[data-col]"));
+
+        const parseValue = (cell, type) => {
+            const text = (cell?.textContent || "").trim();
+            if (type === "number") {
+                const cleaned = text.replace(/[^0-9.-]/g, "");
+                const parsed = Number.parseFloat(cleaned);
+                return Number.isFinite(parsed) ? parsed : 0;
+            }
+            if (type === "datetime") {
+                const iso = text.replace(" ", "T") + ":00";
+                const ts = Date.parse(iso);
+                return Number.isFinite(ts) ? ts : 0;
+            }
+            return text.toLowerCase();
+        };
+
+        const updateIndicators = (activeHeader, direction) => {
+            headers.forEach(header => {
+                const indicator = header.querySelector(".sort-indicator");
+                header.classList.remove("bg-blue-50");
+                header.setAttribute("aria-sort", "none");
+                if (indicator) indicator.textContent = "▲▼";
+            });
+            const indicator = activeHeader.querySelector(".sort-indicator");
+            activeHeader.classList.add("bg-blue-50");
+            activeHeader.setAttribute("aria-sort", direction === "asc" ? "ascending" : "descending");
+            if (indicator) indicator.textContent = direction === "asc" ? "▲" : "▼";
+        };
+
+        const sortBy = (header, direction) => {
+            const col = header.dataset.col;
+            const type = header.dataset.type || "string";
+            const rows = Array.from(tbody.querySelectorAll("tr"));
+            const colIndex = headers.findIndex(h => h.dataset.col === col);
+            const decorated = rows.map((row, index) => {
+                const cell = row.children[colIndex];
+                return { row, index, value: parseValue(cell, type) };
+            });
+
+            decorated.sort((a, b) => {
+                if (a.value < b.value) return direction === "asc" ? -1 : 1;
+                if (a.value > b.value) return direction === "asc" ? 1 : -1;
+                return a.index - b.index;
+            });
+
+            decorated.forEach(item => tbody.appendChild(item.row));
+            updateIndicators(header, direction);
+        };
+
+        headers.forEach(header => {
+            header.addEventListener("click", () => {
+                const current = header.getAttribute("aria-sort");
+                const direction = current === "ascending" ? "desc" : "asc";
+                sortBy(header, direction);
+            });
+        });
+
+        const defaultHeader = headers.find(h => h.dataset.col === "entry_time");
+        if (defaultHeader) {
+            sortBy(defaultHeader, "asc");
+        }
+    });
+</script>
+{{ end }}
+{{ if .AnalysisResult }}
+<script>
+    window.addEventListener("load", () => {
+        const showSummaryLoading = () => {
+            document.querySelectorAll("[data-summary-loading]").forEach(el => el.classList.remove("hidden"));
+            document.querySelectorAll("[data-summary-table]").forEach(el => el.classList.add("hidden"));
+        };
+
+        const analysisForm = document.getElementById("analysis-form");
+        if (analysisForm) {
+            analysisForm.addEventListener("submit", () => showSummaryLoading());
+        }
+
+        const setupSummaryTable = (tableId, defaultCol) => {
+            const table = document.getElementById(tableId);
+            if (!table) return;
+
+            const tbody = table.querySelector("tbody");
+            const headers = Array.from(table.querySelectorAll("thead th[data-col]"));
+
+            const parseValue = (cell, type) => {
+                const raw = cell?.dataset?.value ?? (cell?.textContent || "").trim();
+                if (type === "number") {
+                    const parsed = Number.parseFloat(String(raw).replace(/[^0-9.-]/g, ""));
+                    return Number.isFinite(parsed) ? parsed : 0;
+                }
+                return String(raw).toLowerCase();
+            };
+
+            const updateIndicators = (activeHeader, direction) => {
+                headers.forEach(header => {
+                    const indicator = header.querySelector(".sort-indicator");
+                    header.classList.remove("bg-blue-50");
+                    header.setAttribute("aria-sort", "none");
+                    if (indicator) indicator.textContent = "↕";
+                });
+                const indicator = activeHeader.querySelector(".sort-indicator");
+                activeHeader.classList.add("bg-blue-50");
+                activeHeader.setAttribute("aria-sort", direction === "asc" ? "ascending" : "descending");
+                if (indicator) indicator.textContent = direction === "asc" ? "▲" : "▼";
+            };
+
+            const sortBy = (header, direction) => {
+                const col = header.dataset.col;
+                const type = header.dataset.type || "string";
+                const rows = Array.from(tbody.querySelectorAll("tr"));
+                const colIndex = headers.findIndex(h => h.dataset.col === col);
+                const decorated = rows.map((row, index) => {
+                    const cell = row.children[colIndex];
+                    return { row, index, value: parseValue(cell, type) };
+                });
+
+                decorated.sort((a, b) => {
+                    if (a.value < b.value) return direction === "asc" ? -1 : 1;
+                    if (a.value > b.value) return direction === "asc" ? 1 : -1;
+                    return a.index - b.index;
+                });
+
+                decorated.forEach(item => tbody.appendChild(item.row));
+                updateIndicators(header, direction);
+            };
+
+            headers.forEach(header => {
+                header.addEventListener("click", () => {
+                    const current = header.getAttribute("aria-sort");
+                    const direction = current === "ascending" ? "desc" : "asc";
+                    sortBy(header, direction);
+                });
+            });
+
+            const defaultHeader = headers.find(h => h.dataset.col === defaultCol);
+            if (defaultHeader) {
+                sortBy(defaultHeader, "desc");
+            }
+        };
+
+        const setupSearch = (inputId, tableId, countId, includeTier) => {
+            const input = document.getElementById(inputId);
+            const table = document.getElementById(tableId);
+            const countEl = document.getElementById(countId);
+            if (!input || !table) return;
+
+            const tbody = table.querySelector("tbody");
+            const rows = Array.from(tbody.querySelectorAll("tr"));
+
+            const updateCount = () => {
+                if (!countEl) return;
+                const visible = rows.filter(row => !row.classList.contains("hidden")).length;
+                countEl.textContent = String(visible);
+            };
+
+            const applyFilter = () => {
+                const query = input.value.trim().toLowerCase();
+                rows.forEach(row => {
+                    const name = (row.dataset.name || "").toLowerCase();
+                    const tier = (row.dataset.tier || "").toLowerCase();
+                    const match = query === "" || name.includes(query) || (includeTier && tier.includes(query));
+                    row.classList.toggle("hidden", !match);
+                });
+                updateCount();
+            };
+
+            input.addEventListener("input", applyFilter);
+            updateCount();
+        };
+
+        const setupExport = (buttonId, tableId, fileName) => {
+            const button = document.getElementById(buttonId);
+            const table = document.getElementById(tableId);
+            if (!button || !table) return;
+
+            button.addEventListener("click", () => {
+                const headers = Array.from(table.querySelectorAll("thead th")).map(th => th.textContent.trim());
+                const rows = Array.from(table.querySelectorAll("tbody tr")).filter(row => !row.classList.contains("hidden"));
+                const data = rows.map(row => Array.from(row.children).map(td => td.textContent.trim()));
+
+                const csv = [headers, ...data]
+                    .map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(","))
+                    .join("\n");
+
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+        };
+
+        const setupExpand = (toggleSelector, tableSelector) => {
+            document.querySelectorAll(toggleSelector).forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const key = btn.dataset.summaryToggle;
+                    const wrap = document.querySelector(`[data-summary-table="${key}"]`);
+                    if (!wrap) return;
+                    wrap.classList.toggle("summary-expanded");
+                    const expanded = wrap.classList.contains("summary-expanded");
+                    btn.textContent = expanded ? "Collapse table" : "Expand table";
+                });
+            });
+        };
+
+        setupSummaryTable("strategy-summary-table", "scorecard");
+        setupSummaryTable("pair-summary-table", "scorecard");
+        setupSearch("strategy-summary-search", "strategy-summary-table", "strategy-summary-count", true);
+        setupSearch("pair-summary-search", "pair-summary-table", "pair-summary-count", false);
+        setupExport("strategy-summary-export", "strategy-summary-table", "strategy_summary.csv");
+        setupExport("pair-summary-export", "pair-summary-table", "pair_summary.csv");
+        setupExpand(".summary-toggle", "[data-summary-table]");
+    });
+</script>
+{{ end }}
 <script>
     window.addEventListener("load", () => {
         const loadSelect = document.getElementById("portfolio-load");
+        const loadBtn = document.getElementById("portfolio-load-btn");
         const manageBtn = document.getElementById("portfolio-manage");
         const manageModal = document.getElementById("portfolio-manage-modal");
         const manageClose = document.getElementById("portfolio-manage-close");
@@ -542,6 +994,10 @@
         const analysisN = document.querySelector("[name='analysis_n']");
         const analysisUnit = document.querySelector("[name='analysis_unit']");
         const analysisPortfolio = document.querySelector("input[name='analysis_portfolio']");
+        const enableAllBtn = document.getElementById("enabled-all");
+        const disableAllBtn = document.getElementById("disabled-all");
+        const chartsEnabledInput = document.getElementById("analysis-charts-enabled");
+        const chartsThresholdInput = document.getElementById("analysis-charts-threshold");
 
         let pendingOverwrite = null;
 
@@ -598,6 +1054,13 @@
             const enabled = countEnabled();
             const timestamp = overrideTimestamp || formatNameDateTime(new Date());
             previewEl.textContent = `${base}_${enabled}Systems_${from}-${to}_${timestamp}`;
+        };
+
+        const setAllEnabled = (value) => {
+            document.querySelectorAll("tbody input[name$='.enabled']").forEach(el => {
+                el.checked = value;
+            });
+            updatePreview();
         };
 
         const collectMappings = () => {
@@ -666,58 +1129,9 @@
             window.location = `/portfolios/merge?portfolio=${encodeURIComponent(name)}`;
         };
 
-        const loadPortfolio = async (name) => {
+        const loadPortfolio = (name) => {
             if (!name) return;
-            const resp = await fetch(`/api/portfolios/load?name=${encodeURIComponent(name)}`);
-            if (!resp.ok) {
-                alert("Failed to load portfolio.");
-                return;
-            }
-            const portfolio = await resp.json();
-            if (baseInput) baseInput.value = portfolio.base_name || portfolio.name || "";
-            if (analysisPortfolio) analysisPortfolio.value = portfolio.name || "";
-            if (analysisBalanceInput) analysisBalanceInput.value = portfolio.filters?.balance || "";
-            if (analysisStart) analysisStart.value = portfolio.filters?.from || "";
-            if (analysisEnd) analysisEnd.value = portfolio.filters?.to || "";
-            if (analysisQuick) {
-                const mode = String(portfolio.filters?.range_mode || "");
-                if (mode.startsWith("QUICK:")) {
-                    analysisQuick.value = mode.replace("QUICK:", "");
-                } else {
-                    analysisQuick.value = "";
-                }
-            }
-
-            const quickButtons = document.querySelectorAll(".quick-btn");
-            if (analysisQuick && quickButtons.length) {
-                quickButtons.forEach(btn => {
-                    const active = btn.dataset.range === analysisQuick.value;
-                    btn.classList.toggle("border-blue-600", active);
-                    btn.classList.toggle("text-blue-700", active);
-                    btn.classList.toggle("border-gray-200", !active);
-                });
-            }
-
-            const rows = document.querySelectorAll("tbody tr[data-strategy-key]");
-            rows.forEach(row => {
-                const key = String(row.dataset.strategyKey || "").toLowerCase();
-                const match = (portfolio.mappings || []).find(m => String(m.strategy || "").toLowerCase() === key);
-                if (!match) return;
-                const enabled = row.querySelector("input[name$='.enabled']");
-                const weight = row.querySelector("input[name$='.weight']");
-                const ratioMode = row.querySelector("input[name$='.ratio_mode']");
-                const ratioUnit = row.querySelector("input[name$='.ratio_unit']");
-                const ratioAmount = row.querySelector("input[name$='.ratio_amount']");
-                const notes = row.querySelector("input[name$='.notes']");
-                if (enabled) enabled.checked = !!match.enabled;
-                if (weight) weight.value = match.weight ?? 1;
-                if (ratioMode) ratioMode.checked = !!match.ratio_mode;
-                if (ratioUnit) ratioUnit.value = match.ratio_unit ?? 1;
-                if (ratioAmount) ratioAmount.value = match.ratio_amount ?? 10000;
-                if (notes) notes.value = match.notes ?? "";
-            });
-
-            updatePreview();
+            window.location = `/portfolios/merge?portfolio=${encodeURIComponent(name)}`;
         };
 
         if (baseInput) baseInput.addEventListener("input", updatePreview);
@@ -728,6 +1142,23 @@
         if (analysisStart) analysisStart.addEventListener("change", updatePreview);
         if (analysisEnd) analysisEnd.addEventListener("change", updatePreview);
         if (analysisBalanceInput) analysisBalanceInput.addEventListener("change", updatePreview);
+
+        const applyChartSettings = () => {
+            if (autoRefresh && autoRefresh.checked) {
+                submitWithMappings();
+            }
+        };
+        if (chartsEnabledInput) {
+            chartsEnabledInput.addEventListener("change", applyChartSettings);
+        }
+        if (chartsThresholdInput) {
+            chartsThresholdInput.addEventListener("change", applyChartSettings);
+            chartsThresholdInput.addEventListener("input", () => {
+                if (autoRefresh && autoRefresh.checked) {
+                    applyChartSettings();
+                }
+            });
+        }
 
         if (saveBtn) {
             saveBtn.addEventListener("click", () => savePortfolio(false));
@@ -744,34 +1175,27 @@
             manageClose.addEventListener("click", () => manageModal.classList.add("hidden"));
         }
 
-        document.querySelectorAll(".portfolio-load-btn").forEach(btn => {
-            btn.addEventListener("click", () => {
-                const name = btn.getAttribute("data-name");
-                if (manageModal) manageModal.classList.add("hidden");
-                if (name && loadSelect) {
-                    loadSelect.value = name;
-                }
-                loadPortfolio(name);
-            });
-        });
+        if (enableAllBtn) {
+            enableAllBtn.addEventListener("click", () => setAllEnabled(true));
+        }
+        if (disableAllBtn) {
+            disableAllBtn.addEventListener("click", () => setAllEnabled(false));
+        }
 
-        document.querySelectorAll(".portfolio-delete-btn").forEach(btn => {
-            btn.addEventListener("click", async () => {
-                const name = btn.getAttribute("data-name");
-                if (!name) return;
-                if (!confirm(`Delete portfolio '${name}'?`)) return;
-                const resp = await fetch("/api/portfolios/delete", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name })
-                });
-                if (!resp.ok) {
-                    alert("Failed to delete portfolio.");
-                    return;
-                }
-                window.location = "/portfolios/merge";
+        window.deletePortfolio = async (name) => {
+            if (!name) return;
+            if (!confirm(`Delete portfolio '${name}'?`)) return;
+            const resp = await fetch("/api/portfolios/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name })
             });
-        });
+            if (!resp.ok) {
+                alert("Failed to delete portfolio.");
+                return;
+            }
+            window.location = "/portfolios/merge";
+        };
 
         if (overwriteCancel && overwriteModal) {
             overwriteCancel.addEventListener("click", () => {
