@@ -14,7 +14,7 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
     {{ end }}
-    {{ if and .HasChartData (eq .ChartEngine "tv") }}
+    {{ if eq .ChartEngine "tv" }}
     <!-- TradingView Lightweight Charts -->
     <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" defer></script>
     {{ end }}
@@ -52,6 +52,7 @@
         <div class="space-x-3 text-sm">
             <a class="text-blue-600 hover:underline" href="/imports/trades">Import</a>
             <a class="text-blue-600 hover:underline" href="/import/batch">Batch import</a>
+            <a class="text-blue-600 hover:underline" href="/scoring-weights">Scoring Weights</a>
             <a class="text-blue-600 hover:underline" href="/strat-exposure{{ if .AnalysisPortfolio }}?portfolio={{ urlquery .AnalysisPortfolio }}{{ end }}">StratExposure</a>
             <a class="text-blue-600 hover:underline" href="/portfolio">Back to portfolio</a>
         </div>
@@ -501,40 +502,42 @@
             {{ end }}
         </div>
 
-        {{ if .AnalysisResult.Trades }}
-        <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
-            <div class="font-medium text-gray-800 mb-2">Filtered Trades</div>
-            <div class="max-h-64 overflow-auto">
-                <table id="filtered-trades-table" class="min-w-full text-xs border border-gray-200">
-                    <thead class="bg-gray-50">
-                    <tr>
-                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="strategy" data-type="string" aria-sort="none">Strategy <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
-                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="direction" data-type="string" aria-sort="none">Direction <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
-                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="entry_time" data-type="datetime" aria-sort="none">EnT <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
-                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="entry_price" data-type="number" aria-sort="none">EnP <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
-                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="exit_time" data-type="datetime" aria-sort="none">ExT <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
-                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="exit_price" data-type="number" aria-sort="none">ExP <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
-                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="net_pnl" data-type="number" aria-sort="none">Net PnL <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
-                        <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="weighted_pnl" data-type="number" aria-sort="none">Weighted PnL <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {{ range .AnalysisResult.Trades }}
-                    <tr class="odd:bg-white even:bg-gray-50">
-                        <td class="border px-2 py-1">{{ .Strategy }}</td>
-                        <td class="border px-2 py-1">{{ .Direction }}</td>
-                        <td class="border px-2 py-1">{{ .EntryTime }}</td>
-                        <td class="border px-2 py-1">{{ printf "%.2f" .EntryPrice }}</td>
-                        <td class="border px-2 py-1">{{ .ExitTime }}</td>
-                        <td class="border px-2 py-1">{{ printf "%.2f" .ExitPrice }}</td>
-                        <td class="border px-2 py-1">{{ printf "%.2f" .NetPnL }}</td>
-                        <td class="border px-2 py-1">{{ printf "%.2f" .WeightedPnL }}</td>
-                    </tr>
-                    {{ end }}
-                    </tbody>
-                </table>
+        {{ with .AnalysisResult }}
+            {{ if .Trades }}
+            <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
+                <div class="font-medium text-gray-800 mb-2">Filtered Trades</div>
+                <div class="max-h-64 overflow-auto">
+                    <table id="filtered-trades-table" class="min-w-full text-xs border border-gray-200">
+                        <thead class="bg-gray-50">
+                        <tr>
+                            <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="strategy" data-type="string" aria-sort="none">Strategy <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                            <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="direction" data-type="string" aria-sort="none">Direction <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                            <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="entry_time" data-type="datetime" aria-sort="none">EnT <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                            <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="entry_price" data-type="number" aria-sort="none">EnP <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                            <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="exit_time" data-type="datetime" aria-sort="none">ExT <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                            <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="exit_price" data-type="number" aria-sort="none">ExP <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                            <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="net_pnl" data-type="number" aria-sort="none">Net PnL <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                            <th class="border px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-100" data-col="weighted_pnl" data-type="number" aria-sort="none">Weighted PnL <span class="sort-indicator text-[10px] text-gray-400">▲▼</span></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{ range .Trades }}
+                        <tr class="odd:bg-white even:bg-gray-50">
+                            <td class="border px-2 py-1">{{ .Strategy }}</td>
+                            <td class="border px-2 py-1">{{ .Direction }}</td>
+                            <td class="border px-2 py-1">{{ .EntryTime }}</td>
+                            <td class="border px-2 py-1">{{ printf "%.2f" .EntryPrice }}</td>
+                            <td class="border px-2 py-1">{{ .ExitTime }}</td>
+                            <td class="border px-2 py-1">{{ printf "%.2f" .ExitPrice }}</td>
+                            <td class="border px-2 py-1">{{ printf "%.2f" .NetPnL }}</td>
+                            <td class="border px-2 py-1">{{ printf "%.2f" .WeightedPnL }}</td>
+                        </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
+            {{ end }}
         {{ end }}
     </section>
     {{ end }}
@@ -1460,24 +1463,46 @@
             return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
         };
 
-        const mapDdPct = (mode) =>
-            data.labels.map((label, i) => {
-                let value = data.ddPct[i];
-                if (mode === "zero") {
-                    value = Math.abs(value);
-                } else if (mode === "analysis") {
-                    const balance = getAnalysisBalance();
-                    if (balance) {
-                        value = (data.ddAmt[i] / balance) * 100;
-                    }
-                }
-                return { time: toTs(label), value };
-            });
-
         const toTs = (label) => {
             const iso = String(label || "").replace(" ", "T") + ":00";
             const ts = Date.parse(iso);
-            return Number.isFinite(ts) ? Math.floor(ts / 1000) : 0;
+            return Number.isFinite(ts) ? Math.floor(ts / 1000) : NaN;
+        };
+
+        const buildTimes = (labels) => {
+            const seen = new Map();
+            return labels.map((label) => {
+                const ts = toTs(label);
+                if (!Number.isFinite(ts) || ts <= 0) return NaN;
+                const offset = seen.get(ts) || 0;
+                seen.set(ts, offset + 1);
+                return ts + offset;
+            });
+        };
+
+        const buildSeries = (times, valueAt) => {
+            const points = [];
+            for (let i = 0; i < times.length; i += 1) {
+                const time = times[i];
+                if (!Number.isFinite(time)) continue;
+                const value = valueAt(i);
+                if (!Number.isFinite(value)) continue;
+                points.push({ time, value });
+            }
+            return points;
+        };
+
+        const mapDdPctValue = (i, mode) => {
+            let value = data.ddPct[i];
+            if (mode === "zero") {
+                value = Math.abs(value);
+            } else if (mode === "analysis") {
+                const balance = getAnalysisBalance();
+                if (balance) {
+                    value = (data.ddAmt[i] / balance) * 100;
+                }
+            }
+            return value;
         };
 
         const makeChart = (containerId) => {
@@ -1491,12 +1516,14 @@
             });
         };
 
+        const times = buildTimes(data.labels || []);
+
         const equityChart = makeChart("tv-equity");
         if (equityChart) {
             const pnlSeries = equityChart.addHistogramSeries({ color: "rgba(59, 130, 246, 0.6)" });
             const equitySeries = equityChart.addLineSeries({ color: "rgba(16, 185, 129, 0.9)" });
-            pnlSeries.setData(data.labels.map((label, i) => ({ time: toTs(label), value: data.pnl[i] })));
-            equitySeries.setData(data.labels.map((label, i) => ({ time: toTs(label), value: data.equity[i] })));
+            pnlSeries.setData(buildSeries(times, (i) => data.pnl[i]));
+            equitySeries.setData(buildSeries(times, (i) => data.equity[i]));
         }
 
         const ddPctChart = makeChart("tv-ddpct");
@@ -1508,7 +1535,7 @@
                 topColor: "rgba(239, 68, 68, 0.2)",
                 bottomColor: "rgba(239, 68, 68, 0.05)"
             });
-            ddPctSeries.setData(mapDdPct(mode));
+            ddPctSeries.setData(buildSeries(times, (i) => mapDdPctValue(i, mode)));
         }
 
         const ddAmtChart = makeChart("tv-ddamt");
@@ -1518,12 +1545,12 @@
                 topColor: "rgba(245, 158, 11, 0.2)",
                 bottomColor: "rgba(245, 158, 11, 0.05)"
             });
-            ddAmtSeries.setData(data.labels.map((label, i) => ({ time: toTs(label), value: data.ddAmt[i] })));
+            ddAmtSeries.setData(buildSeries(times, (i) => data.ddAmt[i]));
         }
 
         const refreshDdPctSeries = (mode) => {
             if (!ddPctSeries) return;
-            ddPctSeries.setData(mapDdPct(mode));
+            ddPctSeries.setData(buildSeries(times, (i) => mapDdPctValue(i, mode)));
         };
 
         if (baselineSelect) {

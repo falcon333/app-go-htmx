@@ -83,6 +83,12 @@ type BatchImportViewModel struct {
 	FileSummary string
 }
 
+type ScoreWeightsViewModel struct {
+	Weights        ScoreWeights
+	SuccessMessage string
+	ErrorMessage   string
+}
+
 type MappingRowView struct {
 	StrategyKey string
 	Enabled     bool
@@ -233,6 +239,7 @@ func main() {
 			"web/templates/imports_batch.html",
 			"web/templates/portfolio_merge.html",
 			"web/templates/strat_exposure.html",
+			"web/templates/scoring_weights.html",
 		),
 	)
 
@@ -811,6 +818,66 @@ func main() {
 	})
 
 	// =================================================
+	// Scoring weights UI
+	// =================================================
+	mux.HandleFunc("/scoring-weights", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		if r.Method == http.MethodGet {
+			weights := loadScoreWeights()
+			vm := ScoreWeightsViewModel{Weights: weights}
+			if err := tmpl.ExecuteTemplate(w, "scoring_weights.html", vm); err != nil {
+				log.Printf("[render] scoring_weights.html failed (get): %v", err)
+				http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		_ = r.ParseForm()
+		parse := func(key string, fallback float64) float64 {
+			raw := strings.TrimSpace(r.FormValue(key))
+			if raw == "" {
+				return fallback
+			}
+			v, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				return fallback
+			}
+			return v
+		}
+
+		current := loadScoreWeights()
+		settings := trades.ScoreWeightsSettings{
+			R2:         parse("r2", current.R2),
+			Net:        parse("net", current.Net),
+			DD:         parse("dd", current.DD),
+			PF:         parse("pf", current.PF),
+			Expectancy: parse("expectancy", current.Expectancy),
+		}
+
+		vm := ScoreWeightsViewModel{Weights: ScoreWeights{R2: settings.R2, Net: settings.Net, DD: settings.DD, PF: settings.PF, Expectancy: settings.Expectancy}}
+		if err := trades.SaveScoreWeights(settings); err != nil {
+			vm.ErrorMessage = err.Error()
+			if err := tmpl.ExecuteTemplate(w, "scoring_weights.html", vm); err != nil {
+				log.Printf("[render] scoring_weights.html failed (post): %v", err)
+				http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+
+		vm.SuccessMessage = "Scoring weights saved."
+		if err := tmpl.ExecuteTemplate(w, "scoring_weights.html", vm); err != nil {
+			log.Printf("[render] scoring_weights.html failed (post): %v", err)
+			http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+		}
+	})
+
+	// =================================================
 	// Portfolio API (save/load/delete/list)
 	// =================================================
 	mux.HandleFunc("/api/portfolios", func(w http.ResponseWriter, r *http.Request) {
@@ -1101,6 +1168,20 @@ func buildChartLinks(base url.Values) chartLinks {
 	return chartLinks{
 		ChartJS: build("chartjs"),
 		TV:      build("tv"),
+	}
+}
+
+func loadScoreWeights() ScoreWeights {
+	settings, err := trades.LoadScoreWeights()
+	if err != nil || settings == nil {
+		return defaultScoreWeights()
+	}
+	return ScoreWeights{
+		R2:         settings.R2,
+		Net:        settings.Net,
+		DD:         settings.DD,
+		PF:         settings.PF,
+		Expectancy: settings.Expectancy,
 	}
 }
 
@@ -1838,7 +1919,7 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		}
 	}
 
-	weights := defaultScoreWeights()
+	weights := loadScoreWeights()
 	strategySummary := buildStrategySummary(summaryTrades, startingCapital, weights)
 	pairSummary := buildPairSummary(summaryTrades, startingCapital, weights)
 	exposureSummary, exposureAnalysis := buildExposureAnalysis(exposureTrades)
