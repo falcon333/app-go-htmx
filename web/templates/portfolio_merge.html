@@ -42,6 +42,15 @@
         .summary-skeleton-row {
             height: 36px;
         }
+        .accordion-header {
+            width: 100%;
+        }
+        .accordion-chevron {
+            transition: transform 0.2s ease;
+        }
+        .accordion-chevron.rotate-180 {
+            transform: rotate(180deg);
+        }
     </style>
 </head>
 
@@ -113,54 +122,79 @@
                     <div class="text-xs text-gray-500">Final name: <span id="portfolio-final-name" class="font-medium text-gray-700">{{ .FinalNamePreview }}</span></div>
                 </div>
 
-                <div class="mt-6 overflow-x-auto">
-                    <table class="min-w-full text-sm border border-gray-200">
-                        <thead class="bg-gray-50">
-                        <tr>
-                            <th class="border px-3 py-2 text-left">Key</th>
-                            <th class="border px-3 py-2 text-left">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <span>Enabled</span>
-                                    <button type="button" id="enabled-all" class="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50">Enable All</button>
-                                    <button type="button" id="disabled-all" class="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50">Disable All</button>
-                                </div>
-                            </th>
-                            <th class="border px-3 py-2 text-left">Weight</th>
-                            <th class="border px-3 py-2 text-left">Ratio Mode</th>
-                            <th class="border px-3 py-2 text-left">Ratio Unit</th>
-                            <th class="border px-3 py-2 text-left">Ratio Amount</th>
-                            <th class="border px-3 py-2 text-left">Notes</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {{ range $i, $row := .Rows }}
-                        <tr class="odd:bg-white even:bg-gray-50" data-strategy-key="{{ $row.StrategyKey }}">
-                            <td class="border px-3 py-2">
-                                <div class="font-medium">{{ $row.StrategyKey }}</div>
-                                <input type="hidden" name="rows[{{ $i }}].strategy_key" value="{{ $row.StrategyKey }}">
-                            </td>
-                            <td class="border px-3 py-2">
-                                <input type="checkbox" name="rows[{{ $i }}].enabled" {{ if $row.Enabled }}checked{{ end }}>
-                            </td>
-                            <td class="border px-3 py-2">
-                                <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].weight" value="{{ $row.Weight }}">
-                            </td>
-                            <td class="border px-3 py-2">
-                                <input type="checkbox" name="rows[{{ $i }}].ratio_mode" {{ if $row.RatioMode }}checked{{ end }}>
-                            </td>
-                            <td class="border px-3 py-2">
-                                <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].ratio_unit" value="{{ $row.RatioUnit }}">
-                            </td>
-                            <td class="border px-3 py-2">
-                                <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].ratio_amount" value="{{ $row.RatioAmount }}">
-                            </td>
-                            <td class="border px-3 py-2">
-                                <input class="w-full rounded border px-2 py-1" type="text" name="rows[{{ $i }}].notes" value="{{ $row.Notes }}">
-                            </td>
-                        </tr>
-                        {{ end }}
-                        </tbody>
-                    </table>
+                <div class="mt-6 rounded-lg border border-gray-200 bg-white">
+                    <button type="button" class="accordion-header flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-800" data-accordion-target="strategy-table-panel" aria-expanded="true" aria-controls="strategy-table-panel">
+                        <span>Strategy Table</span>
+                        <span class="accordion-chevron rotate-180" aria-hidden="true">▾</span>
+                    </button>
+                    <div id="strategy-table-panel" class="px-4 pb-4">
+                        <div class="mb-3 flex flex-wrap items-center gap-3 text-xs">
+                            <div class="flex items-center gap-2">
+                                <label class="text-gray-600" for="strategy-table-search">Search</label>
+                                <input id="strategy-table-search" class="rounded border border-gray-200 px-2 py-1 text-xs" type="text" placeholder="Search key or notes">
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <label class="text-gray-600" for="strategy-table-hide">Hide</label>
+                                <input id="strategy-table-hide" class="rounded border border-gray-200 px-2 py-1 text-xs" type="text" placeholder="SPX, XAU">
+                                <button type="button" id="strategy-table-unhide" class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">Unhide</button>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-gray-600">Weight Bulk</span>
+                                <input id="strategy-weight-bulk" class="w-20 rounded border border-gray-200 px-2 py-1 text-xs" type="number" step="0.01" placeholder="1.0">
+                                <button type="button" id="strategy-weight-apply-all" class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">Apply to All</button>
+                                <button type="button" id="strategy-weight-apply-enabled" class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">Apply to Enabled</button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table id="strategy-table" class="min-w-full text-sm border border-gray-200">
+                                <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="border px-3 py-2 text-left cursor-pointer select-none" data-col="key" data-type="string" aria-sort="none">Key <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="border px-3 py-2 text-left cursor-pointer select-none" data-col="enabled" data-type="number" aria-sort="none">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span>Enabled</span>
+                                            <button type="button" id="enabled-all" class="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50">Enable All</button>
+                                            <button type="button" id="disabled-all" class="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50">Disable All</button>
+                                        </div>
+                                    </th>
+                                    <th class="border px-3 py-2 text-left cursor-pointer select-none" data-col="weight" data-type="number" aria-sort="none">Weight <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="border px-3 py-2 text-left cursor-pointer select-none" data-col="ratio_mode" data-type="number" aria-sort="none">Ratio Mode <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="border px-3 py-2 text-left cursor-pointer select-none" data-col="ratio_unit" data-type="number" aria-sort="none">Ratio Unit <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="border px-3 py-2 text-left cursor-pointer select-none" data-col="ratio_amount" data-type="number" aria-sort="none">Ratio Amount <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    <th class="border px-3 py-2 text-left cursor-pointer select-none" data-col="notes" data-type="string" aria-sort="none">Notes <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                {{ range $i, $row := .Rows }}
+                                <tr class="odd:bg-white even:bg-gray-50" data-strategy-key="{{ $row.StrategyKey }}">
+                                    <td class="border px-3 py-2" data-value="{{ $row.StrategyKey }}">
+                                        <div class="font-medium">{{ $row.StrategyKey }}</div>
+                                        <input type="hidden" name="rows[{{ $i }}].strategy_key" value="{{ $row.StrategyKey }}">
+                                    </td>
+                                    <td class="border px-3 py-2" data-value="{{ if $row.Enabled }}1{{ else }}0{{ end }}">
+                                        <input type="checkbox" name="rows[{{ $i }}].enabled" {{ if $row.Enabled }}checked{{ end }}>
+                                    </td>
+                                    <td class="border px-3 py-2" data-value="{{ $row.Weight }}">
+                                        <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].weight" value="{{ $row.Weight }}">
+                                    </td>
+                                    <td class="border px-3 py-2" data-value="{{ if $row.RatioMode }}1{{ else }}0{{ end }}">
+                                        <input type="checkbox" name="rows[{{ $i }}].ratio_mode" {{ if $row.RatioMode }}checked{{ end }}>
+                                    </td>
+                                    <td class="border px-3 py-2" data-value="{{ $row.RatioUnit }}">
+                                        <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].ratio_unit" value="{{ $row.RatioUnit }}">
+                                    </td>
+                                    <td class="border px-3 py-2" data-value="{{ $row.RatioAmount }}">
+                                        <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].ratio_amount" value="{{ $row.RatioAmount }}">
+                                    </td>
+                                    <td class="border px-3 py-2" data-value="{{ $row.Notes }}">
+                                        <input class="w-full rounded border px-2 py-1" type="text" name="rows[{{ $i }}].notes" value="{{ $row.Notes }}">
+                                    </td>
+                                </tr>
+                                {{ end }}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </form>
             <script>
@@ -259,90 +293,95 @@
         {{ $pairRows := .AnalysisResult.PairSummary }}
         <div id="summaries-section" class="mt-4 space-y-4">
             <div class="rounded-lg border border-gray-200 bg-white p-4 text-sm">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                        <div class="text-sm font-medium text-gray-800">Strategy Summary</div>
-                        <div class="text-xs text-gray-500">Updated with latest dashboard run.</div>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2 text-xs">
-                        <div class="text-gray-500">Rows: <span id="strategy-summary-count">{{ len $strategyRows }}</span></div>
-                        <input id="strategy-summary-search" class="rounded border border-gray-200 px-2 py-1 text-xs" type="text" placeholder="Search strategy or tier">
-                        <button id="strategy-summary-export" type="button" class="rounded border border-gray-200 px-2 py-1 text-xs hover:bg-gray-50">Export CSV</button>
-                    </div>
-                </div>
-
-                <div class="summary-loading hidden mt-3" data-summary-loading="strategy">
-                    <div class="space-y-2">
-                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
-                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
-                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
-                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
-                        <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
-                    </div>
-                </div>
-
-                {{ if .AnalysisResult.SummaryError }}
-                    <div class="mt-3 text-sm text-red-600">Unable to load summary data. Please retry Update Dashboard.</div>
-                {{ else if not $strategyRows }}
-                    <div class="mt-3 text-sm text-gray-500">No summary data yet. Run Update Dashboard.</div>
-                {{ else }}
-                    <div class="mt-3 summary-table-wrap" data-summary-table="strategy">
-                        <div class="overflow-x-auto summary-table-container">
-                            <table id="strategy-summary-table" class="summary-table min-w-full text-xs border border-gray-200">
-                                <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="border px-2 py-1 text-left cursor-pointer select-none" data-col="name" data-type="string" aria-sort="none">Strategy <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="trades" data-type="number" aria-sort="none">Trades <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="win_rate" data-type="number" aria-sort="none">Win% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="net_usd" data-type="number" aria-sort="none">Net $ Gain <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="net" data-type="number" aria-sort="none">Net Gain % <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="cagr" data-type="number" aria-sort="none">CAGR <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="max_dd" data-type="number" aria-sort="none">MaxDD% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_return" data-type="number" aria-sort="none">Avg Return <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="risk_reward" data-type="number" aria-sort="none">R:R <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="profit_factor" data-type="number" aria-sort="none">PF <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="ulcer" data-type="number" aria-sort="none">Ulcer Index <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="r2" data-type="number" aria-sort="none">Equity R² <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="tuw" data-type="number" aria-sort="none">TUW <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="scorecard" data-type="number" aria-sort="none">Scorecard <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="sleep_well" data-type="number" aria-sort="none">Sleep Well Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_dd_days" data-type="number" aria-sort="none">Avg DD Days <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="recovery" data-type="number" aria-sort="none">Rec Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-left cursor-pointer select-none" data-col="tier" data-type="string" aria-sort="none">Tier <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                    <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="allocation" data-type="number" aria-sort="none">alloc <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                {{ range $strategyRows }}
-                                {{ $isElite := eq .Tier "Elite (Top 20%)" }}
-                                <tr class="odd:bg-white even:bg-gray-50 {{ if $isElite }}bg-emerald-50{{ end }}" data-name="{{ .Strategy }}" data-tier="{{ .Tier }}">
-                                    <td class="border px-2 py-1 text-left" data-value="{{ .Strategy }}">{{ .Strategy }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .Trades }}">{{ .Trades }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .WinRate }}">{{ printf "%.2f%%" (pct .WinRate) }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .NetGainUsd }}">{{ printf "$%.2f" .NetGainUsd }}</td>
-                                    <td class="border px-2 py-1 text-right {{ if gt .NetGain 0.0 }}text-emerald-700{{ else if lt .NetGain 0.0 }}text-red-600{{ end }}" data-value="{{ .NetGain }}">{{ printf "%.2f%%" (pct .NetGain) }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .CAGR }}">{{ printf "%.2f%%" (pct .CAGR) }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right {{ if lt .MaxDrawdown 0.0 }}text-red-600{{ end }}" data-value="{{ .MaxDrawdown }}">{{ printf "%.2f%%" (pct .MaxDrawdown) }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .AvgReturn }}">{{ printf "%.2f%%" (pct .AvgReturn) }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .RiskReward }}">{{ printf "%.1f" .RiskReward }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .ProfitFactor }}">{{ printf "%.1f" .ProfitFactor }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .UlcerIndex }}">{{ printf "%.2f" .UlcerIndex }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .EquityR2 }}">{{ printf "%.2f" .EquityR2 }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .TimeUnderWater }}">{{ printf "%.2f%%" (pct .TimeUnderWater) }}</td>
-                                    <td class="border px-2 py-1 text-right {{ if $isElite }}bg-emerald-100{{ end }}" data-value="{{ .Scorecard }}">{{ printf "%.1f" .Scorecard }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .SleepWell }}">{{ printf "%.1f" .SleepWell }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .AvgDDDays }}">{{ printf "%.1f" .AvgDDDays }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .RecoveryScore }}">{{ printf "%.1f" .RecoveryScore }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-left" data-value="{{ .Tier }}">{{ .Tier }}</td>
-                                    <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .Allocation }}">{{ printf "%.4f" .Allocation }}</td>
-                                </tr>
-                                {{ end }}
-                                </tbody>
-                            </table>
+                <button type="button" class="accordion-header flex items-center justify-between text-sm font-medium text-gray-800" data-accordion-target="strategy-summary-panel" aria-expanded="true" aria-controls="strategy-summary-panel">
+                    <span>Strategy Summary</span>
+                    <span class="accordion-chevron rotate-180" aria-hidden="true">▾</span>
+                </button>
+                <div id="strategy-summary-panel" class="mt-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <div class="text-xs text-gray-500">Updated with latest dashboard run.</div>
                         </div>
-                        <button type="button" class="summary-toggle mt-2 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 sm:hidden" data-summary-toggle="strategy">Expand table</button>
+                        <div class="flex flex-wrap items-center gap-2 text-xs">
+                            <div class="text-gray-500">Rows: <span id="strategy-summary-count">{{ len $strategyRows }}</span></div>
+                            <input id="strategy-summary-search" class="rounded border border-gray-200 px-2 py-1 text-xs" type="text" placeholder="Search strategy or tier">
+                            <button id="strategy-summary-export" type="button" class="rounded border border-gray-200 px-2 py-1 text-xs hover:bg-gray-50">Export CSV</button>
+                        </div>
                     </div>
-                {{ end }}
+
+                    <div class="summary-loading hidden mt-3" data-summary-loading="strategy">
+                        <div class="space-y-2">
+                            <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                            <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                            <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                            <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                            <div class="summary-skeleton-row animate-pulse rounded bg-gray-100"></div>
+                        </div>
+                    </div>
+
+                    {{ if .AnalysisResult.SummaryError }}
+                        <div class="mt-3 text-sm text-red-600">Unable to load summary data. Please retry Update Dashboard.</div>
+                    {{ else if not $strategyRows }}
+                        <div class="mt-3 text-sm text-gray-500">No summary data yet. Run Update Dashboard.</div>
+                    {{ else }}
+                        <div class="mt-3 summary-table-wrap" data-summary-table="strategy">
+                            <div class="overflow-x-auto summary-table-container">
+                                <table id="strategy-summary-table" class="summary-table min-w-full text-xs border border-gray-200">
+                                    <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="border px-2 py-1 text-left cursor-pointer select-none" data-col="name" data-type="string" aria-sort="none">Strategy <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="trades" data-type="number" aria-sort="none">Trades <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="win_rate" data-type="number" aria-sort="none">Win% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="net_usd" data-type="number" aria-sort="none">Net $ Gain <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="net" data-type="number" aria-sort="none">Net Gain % <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="cagr" data-type="number" aria-sort="none">CAGR <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="max_dd" data-type="number" aria-sort="none">MaxDD% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_return" data-type="number" aria-sort="none">Avg Return <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="risk_reward" data-type="number" aria-sort="none">R:R <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="profit_factor" data-type="number" aria-sort="none">PF <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="ulcer" data-type="number" aria-sort="none">Ulcer Index <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="r2" data-type="number" aria-sort="none">Equity R² <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="tuw" data-type="number" aria-sort="none">TUW <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="scorecard" data-type="number" aria-sort="none">Scorecard <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="sleep_well" data-type="number" aria-sort="none">Sleep Well Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_dd_days" data-type="number" aria-sort="none">Avg DD Days <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="recovery" data-type="number" aria-sort="none">Rec Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-left cursor-pointer select-none" data-col="tier" data-type="string" aria-sort="none">Tier <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="allocation" data-type="number" aria-sort="none">alloc <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {{ range $strategyRows }}
+                                    {{ $isElite := eq .Tier "Elite (Top 20%)" }}
+                                    <tr class="odd:bg-white even:bg-gray-50 {{ if $isElite }}bg-emerald-50{{ end }}" data-name="{{ .Strategy }}" data-tier="{{ .Tier }}">
+                                        <td class="border px-2 py-1 text-left" data-value="{{ .Strategy }}">{{ .Strategy }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .Trades }}">{{ .Trades }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .WinRate }}">{{ printf "%.2f%%" (pct .WinRate) }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .NetGainUsd }}">{{ printf "$%.2f" .NetGainUsd }}</td>
+                                        <td class="border px-2 py-1 text-right {{ if gt .NetGain 0.0 }}text-emerald-700{{ else if lt .NetGain 0.0 }}text-red-600{{ end }}" data-value="{{ .NetGain }}">{{ printf "%.2f%%" (pct .NetGain) }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .CAGR }}">{{ printf "%.2f%%" (pct .CAGR) }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right {{ if lt .MaxDrawdown 0.0 }}text-red-600{{ end }}" data-value="{{ .MaxDrawdown }}">{{ printf "%.2f%%" (pct .MaxDrawdown) }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .AvgReturn }}">{{ printf "%.2f%%" (pct .AvgReturn) }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .RiskReward }}">{{ printf "%.1f" .RiskReward }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .ProfitFactor }}">{{ printf "%.1f" .ProfitFactor }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .UlcerIndex }}">{{ printf "%.2f" .UlcerIndex }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .EquityR2 }}">{{ printf "%.2f" .EquityR2 }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .TimeUnderWater }}">{{ printf "%.2f%%" (pct .TimeUnderWater) }}</td>
+                                        <td class="border px-2 py-1 text-right {{ if $isElite }}bg-emerald-100{{ end }}" data-value="{{ .Scorecard }}">{{ printf "%.1f" .Scorecard }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .SleepWell }}">{{ printf "%.1f" .SleepWell }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .AvgDDDays }}">{{ printf "%.1f" .AvgDDDays }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .RecoveryScore }}">{{ printf "%.1f" .RecoveryScore }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-left" data-value="{{ .Tier }}">{{ .Tier }}</td>
+                                        <td class="summary-col-optional border px-2 py-1 text-right" data-value="{{ .Allocation }}">{{ printf "%.4f" .Allocation }}</td>
+                                    </tr>
+                                    {{ end }}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <button type="button" class="summary-toggle mt-2 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 sm:hidden" data-summary-toggle="strategy">Expand table</button>
+                        </div>
+                    {{ end }}
+                </div>
             </div>
 
             <div class="rounded-lg border border-gray-200 bg-white p-4 text-sm">
@@ -425,81 +464,86 @@
         </div>
 
         <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
-            <div class="font-medium text-gray-800">Charts</div>
-            <div class="mt-3 flex flex-wrap items-center gap-3 text-xs">
-                <label class="inline-flex items-center gap-2">
-                    <input id="analysis-charts-enabled" name="analysis_charts_enabled" type="checkbox" form="analysis-form" {{ if .ChartsEnabled }}checked{{ end }}>
-                    <span>Enable charts</span>
-                </label>
-                <label class="inline-flex items-center gap-2">
-                    <span>Auto-load if enabled strategies ≤</span>
-                    <input id="analysis-charts-threshold" name="analysis_charts_threshold" type="number" min="1" step="1" form="analysis-form" value="{{ .ChartThreshold }}" class="w-16 rounded border border-gray-200 px-2 py-1 text-xs">
-                </label>
-                <span class="text-gray-500">Enabled: {{ .ChartEnabledCount }}</span>
-                {{ if .ChartsAutoEnabled }}
-                    <span class="rounded bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700">Auto-enabled</span>
-                {{ end }}
-            </div>
-            <div class="mt-2 flex flex-wrap items-center gap-2">
-                <div class="inline-flex rounded border border-gray-200 bg-gray-50 p-1 text-xs">
-                <a href="{{ .ChartLinkJS }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "chartjs" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">chartjs</a>
-                <a href="{{ .ChartLinkTV }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "tv" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">tv</a>
+            <button type="button" class="accordion-header flex items-center justify-between text-sm font-medium text-gray-800" data-accordion-target="charts-panel" aria-expanded="false" aria-controls="charts-panel" data-accordion-init="charts">
+                <span>Charts</span>
+                <span class="accordion-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div id="charts-panel" class="mt-3 hidden">
+                <div class="flex flex-wrap items-center gap-3 text-xs">
+                    <label class="inline-flex items-center gap-2">
+                        <input id="analysis-charts-enabled" name="analysis_charts_enabled" type="checkbox" form="analysis-form" {{ if .ChartsEnabled }}checked{{ end }}>
+                        <span>Enable charts</span>
+                    </label>
+                    <label class="inline-flex items-center gap-2">
+                        <span>Auto-load if enabled strategies ≤</span>
+                        <input id="analysis-charts-threshold" name="analysis_charts_threshold" type="number" min="1" step="1" form="analysis-form" value="{{ .ChartThreshold }}" class="w-16 rounded border border-gray-200 px-2 py-1 text-xs">
+                    </label>
+                    <span class="text-gray-500">Enabled: {{ .ChartEnabledCount }}</span>
+                    {{ if .ChartsAutoEnabled }}
+                        <span class="rounded bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700">Auto-enabled</span>
+                    {{ end }}
                 </div>
-                <label class="ml-auto inline-flex items-center gap-2 text-xs text-gray-600">
-                    <span>Drawdown % baseline</span>
-                    <select id="ddpct-baseline" class="rounded border border-gray-200 bg-white px-2 py-1 text-xs">
-                        <option value="analysis">Balance (Analysis Balance)</option>
-                        <option value="balance">Balance (0)</option>
-                        <option value="zero">Zero (abs)</option>
-                    </select>
-                </label>
-            </div>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <div class="inline-flex rounded border border-gray-200 bg-gray-50 p-1 text-xs">
+                    <a href="{{ .ChartLinkJS }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "chartjs" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">chartjs</a>
+                    <a href="{{ .ChartLinkTV }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "tv" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">tv</a>
+                    </div>
+                    <label class="ml-auto inline-flex items-center gap-2 text-xs text-gray-600">
+                        <span>Drawdown % baseline</span>
+                        <select id="ddpct-baseline" class="rounded border border-gray-200 bg-white px-2 py-1 text-xs">
+                            <option value="analysis">Balance (Analysis Balance)</option>
+                            <option value="balance">Balance (0)</option>
+                            <option value="zero">Zero (abs)</option>
+                        </select>
+                    </label>
+                </div>
 
-            {{ if .HasChartData }}
-                {{ if eq .ChartEngine "chartjs" }}
-                <div id="chart-panels" class="mt-3 grid grid-cols-1 gap-4">
-                    <div class="rounded border border-gray-100 bg-white p-3">
-                        <div class="text-xs font-medium text-gray-700 mb-2">Equity Curve (Profit, Per Trade)</div>
-                        <div class="chart-card">
-                            <canvas id="equityChart"></canvas>
+                {{ if .HasChartData }}
+                    {{ if eq .ChartEngine "chartjs" }}
+                    <div id="chart-panels" class="mt-3 grid grid-cols-1 gap-4">
+                        <div class="rounded border border-gray-100 bg-white p-3">
+                            <div class="text-xs font-medium text-gray-700 mb-2">Equity Curve (Profit, Per Trade)</div>
+                            <div class="chart-card">
+                                <canvas id="equityChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="rounded border border-gray-100 bg-white p-3">
+                            <div class="text-xs font-medium text-gray-700 mb-2">Drawdown (%)</div>
+                            <div class="chart-card">
+                                <canvas id="ddPctChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="rounded border border-gray-100 bg-white p-3">
+                            <div class="text-xs font-medium text-gray-700 mb-2">Drawdown ($)</div>
+                            <div class="chart-card">
+                                <canvas id="ddAmtChart"></canvas>
+                            </div>
                         </div>
                     </div>
-                    <div class="rounded border border-gray-100 bg-white p-3">
-                        <div class="text-xs font-medium text-gray-700 mb-2">Drawdown (%)</div>
-                        <div class="chart-card">
-                            <canvas id="ddPctChart"></canvas>
+                    <script type="application/json" id="chart-data">{{ toJSON .AnalysisResult.ChartData }}</script>
+                    {{ else if eq .ChartEngine "tv" }}
+                    <div class="mt-3 grid grid-cols-1 gap-4">
+                        <div class="rounded border border-gray-100 bg-white p-3">
+                            <div class="text-xs font-medium text-gray-700 mb-2">Equity Curve (Profit, Per Trade)</div>
+                            <div class="chart-card" id="tv-equity"></div>
+                        </div>
+                        <div class="rounded border border-gray-100 bg-white p-3">
+                            <div class="text-xs font-medium text-gray-700 mb-2">Drawdown (%)</div>
+                            <div class="chart-card" id="tv-ddpct"></div>
+                        </div>
+                        <div class="rounded border border-gray-100 bg-white p-3">
+                            <div class="text-xs font-medium text-gray-700 mb-2">Drawdown ($)</div>
+                            <div class="chart-card" id="tv-ddamt"></div>
                         </div>
                     </div>
-                    <div class="rounded border border-gray-100 bg-white p-3">
-                        <div class="text-xs font-medium text-gray-700 mb-2">Drawdown ($)</div>
-                        <div class="chart-card">
-                            <canvas id="ddAmtChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <script type="application/json" id="chart-data">{{ toJSON .AnalysisResult.ChartData }}</script>
-                {{ else if eq .ChartEngine "tv" }}
-                <div class="mt-3 grid grid-cols-1 gap-4">
-                    <div class="rounded border border-gray-100 bg-white p-3">
-                        <div class="text-xs font-medium text-gray-700 mb-2">Equity Curve (Profit, Per Trade)</div>
-                        <div class="chart-card" id="tv-equity"></div>
-                    </div>
-                    <div class="rounded border border-gray-100 bg-white p-3">
-                        <div class="text-xs font-medium text-gray-700 mb-2">Drawdown (%)</div>
-                        <div class="chart-card" id="tv-ddpct"></div>
-                    </div>
-                    <div class="rounded border border-gray-100 bg-white p-3">
-                        <div class="text-xs font-medium text-gray-700 mb-2">Drawdown ($)</div>
-                        <div class="chart-card" id="tv-ddamt"></div>
-                    </div>
-                </div>
-                <script type="application/json" id="chart-data">{{ toJSON .AnalysisResult.ChartData }}</script>
+                    <script type="application/json" id="chart-data">{{ toJSON .AnalysisResult.ChartData }}</script>
+                    {{ end }}
+                {{ else if .ChartsEnabled }}
+                    <div class="mt-2 text-gray-500">No data to chart</div>
+                {{ else }}
+                    <div class="mt-2 text-gray-500">Charts disabled (enable to render).</div>
                 {{ end }}
-            {{ else if .ChartsEnabled }}
-                <div class="mt-2 text-gray-500">No data to chart</div>
-            {{ else }}
-                <div class="mt-2 text-gray-500">Charts disabled (enable to render).</div>
-            {{ end }}
+            </div>
         </div>
 
         {{ with .AnalysisResult }}
@@ -977,6 +1021,45 @@
 {{ end }}
 <script>
     window.addEventListener("load", () => {
+        const accordionButtons = document.querySelectorAll("[data-accordion-target]");
+
+        const initAccordionCharts = (button) => {
+            if (button.dataset.accordionInit !== "charts") return;
+            if (button.dataset.accordionInitialized === "true") return;
+            if (typeof window.initPortfolioCharts !== "function") return;
+            window.initPortfolioCharts();
+            button.dataset.accordionInitialized = "true";
+        };
+
+        const setAccordionState = (button, panel, open) => {
+            panel.classList.toggle("hidden", !open);
+            button.setAttribute("aria-expanded", open ? "true" : "false");
+            const chevron = button.querySelector(".accordion-chevron");
+            if (chevron) {
+                chevron.classList.toggle("rotate-180", open);
+            }
+            if (open) {
+                initAccordionCharts(button);
+            }
+        };
+
+        accordionButtons.forEach((button) => {
+            const targetId = button.getAttribute("data-accordion-target");
+            if (!targetId) return;
+            const panel = document.getElementById(targetId);
+            if (!panel) return;
+            const initialOpen = button.getAttribute("aria-expanded") === "true" && !panel.classList.contains("hidden");
+            setAccordionState(button, panel, initialOpen);
+
+            button.addEventListener("click", () => {
+                const isOpen = button.getAttribute("aria-expanded") === "true";
+                setAccordionState(button, panel, !isOpen);
+            });
+        });
+    });
+</script>
+<script>
+    window.addEventListener("load", () => {
         const loadSelect = document.getElementById("portfolio-load");
         const loadBtn = document.getElementById("portfolio-load-btn");
         const manageBtn = document.getElementById("portfolio-manage");
@@ -1146,6 +1229,158 @@
         if (analysisEnd) analysisEnd.addEventListener("change", updatePreview);
         if (analysisBalanceInput) analysisBalanceInput.addEventListener("change", updatePreview);
 
+        const setupStrategyTableSort = () => {
+            const table = document.getElementById("strategy-table");
+            if (!table) return;
+            const tbody = table.querySelector("tbody");
+            const headers = Array.from(table.querySelectorAll("thead th[data-col]"));
+            if (!tbody || headers.length === 0) return;
+
+            const parseValue = (cell, type) => {
+                const raw = cell?.dataset?.value ?? (cell?.textContent || "").trim();
+                if (type === "number") {
+                    const parsed = Number.parseFloat(String(raw).replace(/[^0-9.-]/g, ""));
+                    return Number.isFinite(parsed) ? parsed : 0;
+                }
+                return String(raw).toLowerCase();
+            };
+
+            const updateIndicators = (activeHeader, direction) => {
+                headers.forEach(header => {
+                    const indicator = header.querySelector(".sort-indicator");
+                    header.classList.remove("bg-blue-50");
+                    header.setAttribute("aria-sort", "none");
+                    if (indicator) indicator.textContent = "↕";
+                });
+                const indicator = activeHeader.querySelector(".sort-indicator");
+                activeHeader.classList.add("bg-blue-50");
+                activeHeader.setAttribute("aria-sort", direction === "asc" ? "ascending" : "descending");
+                if (indicator) indicator.textContent = direction === "asc" ? "▲" : "▼";
+            };
+
+            const sortBy = (header, direction) => {
+                const col = header.dataset.col;
+                const type = header.dataset.type || "string";
+                const colIndex = headers.findIndex(h => h.dataset.col === col);
+                if (colIndex < 0) return;
+                const rows = Array.from(tbody.querySelectorAll("tr"));
+                const decorated = rows.map((row, index) => {
+                    const cell = row.children[colIndex];
+                    return { row, index, value: parseValue(cell, type) };
+                });
+
+                decorated.sort((a, b) => {
+                    if (a.value < b.value) return direction === "asc" ? -1 : 1;
+                    if (a.value > b.value) return direction === "asc" ? 1 : -1;
+                    return a.index - b.index;
+                });
+
+                decorated.forEach(item => tbody.appendChild(item.row));
+                updateIndicators(header, direction);
+            };
+
+            headers.forEach(header => {
+                header.addEventListener("click", () => {
+                    const current = header.getAttribute("aria-sort");
+                    const direction = current === "ascending" ? "desc" : "asc";
+                    sortBy(header, direction);
+                });
+            });
+
+            const defaultHeader = headers.find(h => h.dataset.col === "key");
+            if (defaultHeader) {
+                sortBy(defaultHeader, "asc");
+            }
+        };
+
+        const setupStrategyTableSearch = () => {
+            const input = document.getElementById("strategy-table-search");
+            const hideInput = document.getElementById("strategy-table-hide");
+            const unhideBtn = document.getElementById("strategy-table-unhide");
+            const table = document.getElementById("strategy-table");
+            if (!input || !hideInput || !table) return;
+            const tbody = table.querySelector("tbody");
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll("tr"));
+            const hideKey = "strategyTableHideKeywords";
+
+            const parseHideTerms = (value) =>
+                String(value || "")
+                    .split(",")
+                    .map(term => term.trim().toLowerCase())
+                    .filter(Boolean);
+
+            const applyFilter = () => {
+                const query = input.value.trim().toLowerCase();
+                const hideTerms = parseHideTerms(hideInput.value);
+                rows.forEach(row => {
+                    const key = (row.dataset.strategyKey || "").toLowerCase();
+                    const notes = (row.querySelector("input[name$='.notes']")?.value || "").toLowerCase();
+                    const matchSearch = query === "" || key.includes(query) || notes.includes(query);
+                    const matchHide = hideTerms.length === 0 || !hideTerms.some(term => key.includes(term) || notes.includes(term));
+                    row.classList.toggle("hidden", !(matchSearch && matchHide));
+                });
+            };
+
+            input.addEventListener("input", applyFilter);
+            hideInput.addEventListener("input", () => {
+                window.localStorage.setItem(hideKey, hideInput.value);
+                applyFilter();
+            });
+
+            if (unhideBtn) {
+                unhideBtn.addEventListener("click", () => {
+                    hideInput.value = "";
+                    window.localStorage.removeItem(hideKey);
+                    applyFilter();
+                });
+            }
+
+            const storedHide = window.localStorage.getItem(hideKey);
+            if (storedHide) {
+                hideInput.value = storedHide;
+            }
+
+            applyFilter();
+        };
+
+        const setupStrategyTableBulkWeight = () => {
+            const bulkInput = document.getElementById("strategy-weight-bulk");
+            const applyAllBtn = document.getElementById("strategy-weight-apply-all");
+            const applyEnabledBtn = document.getElementById("strategy-weight-apply-enabled");
+            const table = document.getElementById("strategy-table");
+            if (!bulkInput || !applyAllBtn || !applyEnabledBtn || !table) return;
+
+            const tbody = table.querySelector("tbody");
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll("tr"));
+
+            const parseBulk = () => {
+                const value = Number.parseFloat(String(bulkInput.value || "").trim());
+                return Number.isFinite(value) ? value : null;
+            };
+
+            const applyWeight = (onlyEnabled) => {
+                const bulkValue = parseBulk();
+                if (bulkValue === null) {
+                    alert("Enter a valid bulk weight.");
+                    return;
+                }
+                rows.forEach(row => {
+                    const enabled = row.querySelector("input[name$='.enabled']")?.checked || false;
+                    if (onlyEnabled && !enabled) return;
+                    const weightInput = row.querySelector("input[name$='.weight']");
+                    if (!weightInput) return;
+                    weightInput.value = String(bulkValue);
+                    weightInput.dispatchEvent(new Event("input", { bubbles: true }));
+                    weightInput.dispatchEvent(new Event("change", { bubbles: true }));
+                });
+            };
+
+            applyAllBtn.addEventListener("click", () => applyWeight(false));
+            applyEnabledBtn.addEventListener("click", () => applyWeight(true));
+        };
+
         const applyChartSettings = () => {
             if (autoRefresh && autoRefresh.checked) {
                 submitWithMappings();
@@ -1185,6 +1420,10 @@
             disableAllBtn.addEventListener("click", () => setAllEnabled(false));
         }
 
+        setupStrategyTableSort();
+        setupStrategyTableSearch();
+        setupStrategyTableBulkWeight();
+
         window.deletePortfolio = async (name) => {
             if (!name) return;
             if (!confirm(`Delete portfolio '${name}'?`)) return;
@@ -1220,7 +1459,11 @@
 </script>
 {{ if and .AnalysisResult .HasChartData (eq .ChartEngine "chartjs") }}
 <script>
-    window.addEventListener("load", () => {
+    window.initPortfolioCharts = (() => {
+        let initialized = false;
+        return () => {
+            if (initialized) return;
+            initialized = true;
         if (typeof Chart === "undefined") {
             return;
         }
@@ -1424,12 +1667,17 @@
                 }
             });
         }
-    });
+        };
+    })();
 </script>
 {{ end }}
 {{ if and .AnalysisResult .HasChartData (eq .ChartEngine "tv") }}
 <script>
-    window.addEventListener("load", () => {
+    window.initPortfolioCharts = (() => {
+        let initialized = false;
+        return () => {
+            if (initialized) return;
+            initialized = true;
         if (typeof LightweightCharts === "undefined") {
             return;
         }
@@ -1576,7 +1824,8 @@
                 }
             });
         }
-    });
+        };
+    })();
 </script>
 {{ end }}
 </body>

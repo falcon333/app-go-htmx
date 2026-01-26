@@ -110,5 +110,19 @@
     "charts_threshold": 10,
     "charts_enabled_set": false,
     "updated_at": "2026-01-26T04:14:52.2064251Z"
+  },
+  {
+    "portfolio": "MES Swing_9Systems_01-06-2000-01-19-2026_01-25-2026-23-43",
+    "range_quick": "",
+    "auto_refresh": false,
+    "n": "10",
+    "unit": "Years",
+    "start_date": "2000-01-06",
+    "end_date": "2026-01-19",
+    "balance": "100000",
+    "charts_enabled": false,
+    "charts_threshold": 10,
+    "charts_enabled_set": false,
+    "updated_at": "2026-01-26T07:55:16.3420045Z"
   }
 ]
