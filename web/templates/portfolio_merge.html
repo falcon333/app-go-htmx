@@ -237,6 +237,7 @@
             <form id="analysis-form" method="post" action="/portfolios/merge/analysis" class="space-y-4">
                 <input type="hidden" name="analysis_portfolio" value="{{ .AnalysisPortfolio }}">
                 <input type="hidden" name="analysis_range_quick" id="analysis-range-quick" value="{{ .AnalysisRangeQuick }}">
+                <input type="hidden" name="analysis_heatmap_interval" id="analysis-heatmap-interval" value="{{ .AnalysisHeatmapInterval }}">
                 <input type="hidden" name="chart" value="{{ .ChartEngine }}">
 
                 <div class="grid grid-cols-4 gap-2">
@@ -275,11 +276,6 @@
                 <div>
                     <label class="block text-sm font-medium mb-1">Analysis Balance</label>
                     <input class="w-full rounded border px-2 py-1 text-sm" type="number" step="any" name="analysis_balance" value="{{ .AnalysisBalance }}" placeholder="">
-                </div>
-
-                <div>
-                    <label class="block text-sm font-medium mb-1">Drawdown Threshold (%)</label>
-                    <input class="w-full rounded border px-2 py-1 text-sm" type="number" step="0.1" min="0.1" name="analysis_drawdown_threshold" value="{{ .AnalysisDrawdownPct }}" placeholder="5">
                 </div>
 
                 <button type="submit" class="w-full inline-flex items-center justify-center rounded px-5 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700">
@@ -492,6 +488,12 @@
                 <span class="accordion-chevron" aria-hidden="true">▾</span>
             </button>
             <div id="drawdown-events-panel" class="mt-3 hidden">
+                <div class="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                    <label class="inline-flex items-center gap-2">
+                        <span>Threshold %</span>
+                        <input class="w-24 rounded border border-gray-200 px-2 py-1 text-xs" type="number" step="0.1" min="0.1" name="analysis_drawdown_threshold" form="analysis-form" value="{{ .AnalysisDrawdownPct }}" placeholder="5">
+                    </label>
+                </div>
                 {{ $events := .AnalysisResult.DrawdownEvents }}
                 {{ if gt (len $events) 0 }}
                 <div class="overflow-x-auto">
@@ -534,9 +536,9 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="mt-2 text-xs text-gray-500">Top drawdowns (≥5% depth) with recovery time and contributing strategies.</div>
+                <div class="mt-2 text-xs text-gray-500">Top drawdowns (≥{{ .AnalysisDrawdownPct }}% depth) with recovery time and contributing strategies.</div>
                 {{ else }}
-                <div class="text-sm text-gray-500">No drawdowns exceeding 5% in this range.</div>
+                <div class="text-sm text-gray-500">No drawdowns exceeding {{ .AnalysisDrawdownPct }}% in this range.</div>
                 {{ end }}
             </div>
             <button type="button" class="accordion-header flex items-center justify-between text-sm font-medium text-gray-800" data-accordion-target="trade-duration-panel" aria-expanded="false" aria-controls="trade-duration-panel">
@@ -574,19 +576,28 @@
                 {{ end }}
             </div>
             <button type="button" class="accordion-header flex items-center justify-between text-sm font-medium text-gray-800" data-accordion-target="hourly-heatmap-panel" aria-expanded="false" aria-controls="hourly-heatmap-panel">
-                <span>Hourly Heatmap (Chicago Time)</span>
+                <span>Time Heatmap (Chicago Time)</span>
                 <span class="accordion-chevron" aria-hidden="true">▾</span>
             </button>
             <div id="hourly-heatmap-panel" class="mt-3 hidden">
-                {{ $heatmap := .AnalysisResult.HourlyHeatmapTable }}
+                {{ $heatmap := .AnalysisResult.HeatmapTable }}
                 {{ if gt (len $heatmap.Rows) 0 }}
+                <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <span>Interval:</span>
+                    <div class="inline-flex rounded border border-gray-200 bg-gray-50 p-1 text-xs">
+                        <button type="button" class="heatmap-interval-btn rounded px-3 py-1 {{ if eq .AnalysisHeatmapInterval "hourly" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}" data-interval="hourly">Hourly</button>
+                        <button type="button" class="heatmap-interval-btn rounded px-3 py-1 {{ if eq .AnalysisHeatmapInterval "daily" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}" data-interval="daily">Daily</button>
+                        <button type="button" class="heatmap-interval-btn rounded px-3 py-1 {{ if eq .AnalysisHeatmapInterval "weekly" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}" data-interval="weekly">Weekly</button>
+                        <button type="button" class="heatmap-interval-btn rounded px-3 py-1 {{ if eq .AnalysisHeatmapInterval "monthly" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}" data-interval="monthly">Monthly</button>
+                    </div>
+                </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-xs border border-gray-200 text-center">
                         <thead class="bg-gray-50">
                         <tr>
                             <th class="border px-2 py-1 text-left">Label</th>
-                            {{ range $h := (seq 0 23) }}
-                                <th class="border px-2 py-1">{{ printf "%02d:00" $h }}</th>
+                            {{ range $label := $heatmap.ColumnLabels }}
+                                <th class="border px-2 py-1">{{ $label }}</th>
                             {{ end }}
                         </tr>
                         </thead>
@@ -619,9 +630,9 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="mt-2 text-xs text-gray-500">Each cell shows average PnL for trades entered in that hour (Chicago time). Subtext: win count / total. Color: green = avg profit, red = avg loss, gray = no trades.</div>
+                <div class="mt-2 text-xs text-gray-500">Each cell shows average PnL for trades by {{ $heatmap.Interval }} bucket (Chicago time). Subtext: win count / total. Color: green = avg profit, red = avg loss, gray = no trades.</div>
                 {{ else }}
-                <div class="text-sm text-gray-500">No hourly data yet. Run Update Dashboard.</div>
+                <div class="text-sm text-gray-500">No heatmap data yet. Run Update Dashboard.</div>
                 {{ end }}
             </div>
         </div>
@@ -902,6 +913,8 @@
         const autoRefresh = document.getElementById("analysis-auto-refresh");
         const applyBtn = document.getElementById("analysis-apply");
         const quickButtons = document.querySelectorAll(".quick-btn");
+        const heatmapInput = document.getElementById("analysis-heatmap-interval");
+        const heatmapButtons = document.querySelectorAll(".heatmap-interval-btn");
         const chartLinks = document.querySelectorAll("[data-chart-switch]");
         const chartInput = form ? form.querySelector("input[name='chart']") : null;
 
@@ -950,6 +963,19 @@
                 btn.classList.toggle("border-blue-600", active);
                 btn.classList.toggle("text-blue-700", active);
                 btn.classList.toggle("border-gray-200", !active);
+            });
+        }
+
+        function setActiveHeatmapInterval(value) {
+            if (heatmapInput) {
+                heatmapInput.value = value;
+            }
+            heatmapButtons.forEach(btn => {
+                const active = btn.dataset.interval === value;
+                btn.classList.toggle("bg-white", active);
+                btn.classList.toggle("text-blue-700", active);
+                btn.classList.toggle("shadow", active);
+                btn.classList.toggle("text-gray-600", !active);
             });
         }
 
@@ -1005,6 +1031,18 @@
 
         quickButtons.forEach(btn => {
             btn.addEventListener("click", () => applyQuick(btn.dataset.range));
+        });
+
+        heatmapButtons.forEach(btn => {
+            btn.addEventListener("click", () => {
+                const interval = btn.dataset.interval || "hourly";
+                setActiveHeatmapInterval(interval);
+                try {
+                    sessionStorage.setItem("heatmapPanelOpen", "true");
+                    sessionStorage.setItem("heatmapPanelScroll", "true");
+                } catch (_) {}
+                submitWithMappings();
+            });
         });
 
         chartLinks.forEach(link => {
@@ -1064,6 +1102,10 @@
                     }
                 });
             });
+        }
+
+        if (heatmapInput && heatmapInput.value) {
+            setActiveHeatmapInterval(heatmapInput.value);
         }
     })();
 </script>
@@ -1370,8 +1412,21 @@
                     }
                 }
             }
+            const keepHeatmap = sessionStorage.getItem("heatmapPanelOpen") === "true" || window.location.hash === "#hourly-heatmap-panel";
+            if (keepHeatmap) {
+                const heatmapButton = document.querySelector("[data-accordion-target='hourly-heatmap-panel']");
+                const heatmapPanel = document.getElementById("hourly-heatmap-panel");
+                if (heatmapButton && heatmapPanel) {
+                    setAccordionState(heatmapButton, heatmapPanel, true);
+                    if (sessionStorage.getItem("heatmapPanelScroll") === "true") {
+                        heatmapPanel.scrollIntoView({ behavior: "instant", block: "start" });
+                    }
+                }
+            }
             sessionStorage.removeItem("chartsPanelOpen");
             sessionStorage.removeItem("chartsPanelScroll");
+            sessionStorage.removeItem("heatmapPanelOpen");
+            sessionStorage.removeItem("heatmapPanelScroll");
         } catch (_) {}
     });
 </script>

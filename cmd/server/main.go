@@ -111,16 +111,17 @@ type PortfolioMergeViewModel struct {
 	ChartThreshold    int
 	ChartEnabledCount int
 
-	AnalysisRangeQuick  string
-	AnalysisAutoRefresh bool
-	AnalysisN           string
-	AnalysisUnit        string
-	AnalysisStartDate   string
-	AnalysisEndDate     string
-	AnalysisBalance     string
-	AnalysisDrawdownPct string
-	AnalysisPortfolio   string
-	AnalysisResult      *AnalysisResult
+	AnalysisRangeQuick      string
+	AnalysisAutoRefresh     bool
+	AnalysisN               string
+	AnalysisUnit            string
+	AnalysisStartDate       string
+	AnalysisEndDate         string
+	AnalysisBalance         string
+	AnalysisDrawdownPct     string
+	AnalysisHeatmapInterval string
+	AnalysisPortfolio       string
+	AnalysisResult          *AnalysisResult
 }
 
 type AnalysisState struct {
@@ -132,6 +133,7 @@ type AnalysisState struct {
 	EndDate           string
 	Balance           string
 	DrawdownThreshold string
+	HeatmapInterval   string
 	Portfolio         string
 	ChartsEnabled     bool
 	ChartsThreshold   int
@@ -167,7 +169,7 @@ type AnalysisResult struct {
 	SummaryError         string
 	DebugStats           *SummaryDebugStats
 	DrawdownEvents       []DrawdownEvent
-	HourlyHeatmapTable   HourlyHeatmapTable
+	HeatmapTable         TimeHeatmapTable
 	TradeDurationBuckets []DurationBucket
 }
 
@@ -220,6 +222,7 @@ const defaultTimezone = "America/Chicago"
 const defaultChartThreshold = 10
 const defaultDrawdownThresholdPct = "5"
 const defaultDrawdownThreshold = 0.05
+const defaultHeatmapInterval = "hourly"
 
 func main() {
 	tmpl := template.Must(
@@ -1460,31 +1463,32 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 	preview := buildPortfolioFinalName(baseName, enabledCount, start, end, true, "")
 
 	return PortfolioMergeViewModel{
-		PortfolioName:       baseName,
-		PortfolioSelected:   portfolioName,
-		PortfolioItems:      items,
-		Rows:                rows,
-		AutoAppendEnabled:   true,
-		FinalNamePreview:    preview,
-		SuccessMessage:      successMessage,
-		AnalysisRangeQuick:  analysis.RangeQuick,
-		AnalysisAutoRefresh: analysis.AutoRefresh,
-		AnalysisN:           analysis.N,
-		AnalysisUnit:        analysis.Unit,
-		AnalysisStartDate:   analysis.StartDate,
-		AnalysisEndDate:     analysis.EndDate,
-		AnalysisBalance:     analysis.Balance,
-		AnalysisDrawdownPct: analysis.DrawdownThreshold,
-		AnalysisPortfolio:   analysis.Portfolio,
-		AnalysisResult:      result,
-		ChartEngine:         chartEngine,
-		ChartLinkJS:         chartLinks.ChartJS,
-		ChartLinkTV:         chartLinks.TV,
-		HasChartData:        hasChartData,
-		ChartsEnabled:       chartsEnabled,
-		ChartsAutoEnabled:   autoEnabled && !analysis.ChartsEnabledSet,
-		ChartThreshold:      chartThreshold,
-		ChartEnabledCount:   enabledCount,
+		PortfolioName:           baseName,
+		PortfolioSelected:       portfolioName,
+		PortfolioItems:          items,
+		Rows:                    rows,
+		AutoAppendEnabled:       true,
+		FinalNamePreview:        preview,
+		SuccessMessage:          successMessage,
+		AnalysisRangeQuick:      analysis.RangeQuick,
+		AnalysisAutoRefresh:     analysis.AutoRefresh,
+		AnalysisN:               analysis.N,
+		AnalysisUnit:            analysis.Unit,
+		AnalysisStartDate:       analysis.StartDate,
+		AnalysisEndDate:         analysis.EndDate,
+		AnalysisBalance:         analysis.Balance,
+		AnalysisDrawdownPct:     analysis.DrawdownThreshold,
+		AnalysisHeatmapInterval: analysis.HeatmapInterval,
+		AnalysisPortfolio:       analysis.Portfolio,
+		AnalysisResult:          result,
+		ChartEngine:             chartEngine,
+		ChartLinkJS:             chartLinks.ChartJS,
+		ChartLinkTV:             chartLinks.TV,
+		HasChartData:            hasChartData,
+		ChartsEnabled:           chartsEnabled,
+		ChartsAutoEnabled:       autoEnabled && !analysis.ChartsEnabledSet,
+		ChartThreshold:          chartThreshold,
+		ChartEnabledCount:       enabledCount,
 	}, nil
 }
 
@@ -1499,6 +1503,7 @@ func defaultAnalysisState(portfolioName string) AnalysisState {
 		EndDate:           "",
 		Balance:           "100000",
 		DrawdownThreshold: defaultDrawdownThresholdPct,
+		HeatmapInterval:   defaultHeatmapInterval,
 		Portfolio:         portfolio,
 		ChartsEnabled:     false,
 		ChartsThreshold:   defaultChartThreshold,
@@ -1522,6 +1527,9 @@ func loadAnalysisState(portfolioName string) AnalysisState {
 	state.Balance = stored.Balance
 	if strings.TrimSpace(stored.DrawdownThreshold) != "" {
 		state.DrawdownThreshold = stored.DrawdownThreshold
+	}
+	if strings.TrimSpace(stored.HeatmapInterval) != "" {
+		state.HeatmapInterval = normalizeHeatmapInterval(stored.HeatmapInterval)
 	}
 	state.Portfolio = stored.Portfolio
 	state.ChartsEnabled = stored.ChartsEnabled
@@ -1548,6 +1556,7 @@ func saveAnalysisState(state AnalysisState) error {
 		EndDate:           state.EndDate,
 		Balance:           state.Balance,
 		DrawdownThreshold: strings.TrimSpace(state.DrawdownThreshold),
+		HeatmapInterval:   normalizeHeatmapInterval(state.HeatmapInterval),
 		ChartsEnabled:     state.ChartsEnabled,
 		ChartsThreshold:   normalizeChartThreshold(state.ChartsThreshold),
 		ChartsEnabledSet:  state.ChartsEnabledSet,
@@ -1565,6 +1574,7 @@ func parseAnalysisState(form url.Values) AnalysisState {
 	if drawdownThreshold == "" {
 		drawdownThreshold = defaultDrawdownThresholdPct
 	}
+	heatmapInterval := normalizeHeatmapInterval(form.Get("analysis_heatmap_interval"))
 	chartsEnabledSet := form.Has("analysis_charts_enabled")
 	return AnalysisState{
 		RangeQuick:        strings.TrimSpace(form.Get("analysis_range_quick")),
@@ -1575,6 +1585,7 @@ func parseAnalysisState(form url.Values) AnalysisState {
 		EndDate:           strings.TrimSpace(form.Get("analysis_end_date")),
 		Balance:           strings.TrimSpace(form.Get("analysis_balance")),
 		DrawdownThreshold: drawdownThreshold,
+		HeatmapInterval:   heatmapInterval,
 		Portfolio:         strings.TrimSpace(form.Get("analysis_portfolio")),
 		ChartsEnabled:     form.Get("analysis_charts_enabled") == "on",
 		ChartsThreshold:   threshold,
@@ -1887,7 +1898,7 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		}
 	}
 
-	hourlyHeatmap := buildHourlyHeatmap(tradeRows)
+	heatmap := buildTimeHeatmap(tradeRows, state.HeatmapInterval)
 	tradeDurationBuckets := buildTradeDurationBuckets(tradeRows)
 	return &AnalysisResult{
 		Portfolio:            buildPortfolioLabel(state),
@@ -1917,7 +1928,7 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		MonthlyUsdTable:      monthlyUsd,
 		DebugStats:           debugStats,
 		DrawdownEvents:       drawdownEvents,
-		HourlyHeatmapTable:   hourlyHeatmap,
+		HeatmapTable:         heatmap,
 		TradeDurationBuckets: tradeDurationBuckets,
 	}, nil
 }
@@ -2273,10 +2284,7 @@ func normalizeDrawdownThreshold(raw string) float64 {
 	if err != nil || parsed <= 0 {
 		return defaultDrawdownThreshold
 	}
-	if parsed > 1 {
-		return parsed / 100
-	}
-	return parsed
+	return parsed / 100
 }
 
 func resolveChartSettings(state AnalysisState, enabledCount int) (chartsEnabled bool, autoEnabled bool, threshold int) {
