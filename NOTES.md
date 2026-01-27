@@ -48,3 +48,26 @@ Let users tweak weights, capital, or risk settings and instantly see projected c
 Let me know if you want to implement any of these!
 
 GPT-4.1 • 0x
+
+yes to this:
+Here’s a minimal MVP flow to add AI‑assisted portfolio suggestions to your Go app:
+
+Feature extraction
+Compute per‑strategy metrics you already have (CAGR, Max DD, PF, R², TUW, volatility, correlation).
+
+Constraints
+Define hard caps (e.g., Max DD ≤ 10%, Vol ≤ X, Min trades ≥ N).
+
+Scoring function
+Weighted score = ReturnScore − RiskPenalty (reuse your scoring weights).
+
+Candidate generation
+Build top‑K strategy combos (or greedy add/remove) and rank by score.
+
+Explainability
+Return the top 3 portfolios with a short rationale (best return vs lowest DD).
+
+UI hook
+Add a “Suggest Portfolio” button that runs the optimizer and displays ranked results.
+
+Pick an AI provider (OpenAI, Azure OpenAI, Anthropic), add an API key, and send your normalized analysis JSON to the model. Then store the model’s response (suggestions + rationale) and render it in your UI. If you want, tell me which provider and I’ll wire it in.

@@ -120,6 +120,9 @@ type PortfolioMergeViewModel struct {
 	AnalysisBalance         string
 	AnalysisDrawdownPct     string
 	AnalysisHeatmapInterval string
+	AnalysisSuggest         bool
+	AnalysisTradesLimit     int
+	AnalysisTradesOffset    int
 	AnalysisPortfolio       string
 	AnalysisResult          *AnalysisResult
 }
@@ -134,6 +137,9 @@ type AnalysisState struct {
 	Balance           string
 	DrawdownThreshold string
 	HeatmapInterval   string
+	SuggestPortfolio  bool
+	TradesLimit       int
+	TradesOffset      int
 	Portfolio         string
 	ChartsEnabled     bool
 	ChartsThreshold   int
@@ -158,6 +164,11 @@ type AnalysisResult struct {
 	TimeUnderWater       float64
 	Expectancy           float64
 	Trades               []AnalysisTradeRow
+	TradesTotal          int
+	TradesShown          int
+	TradesOffset         int
+	TradesLimit          int
+	TradesHasMore        bool
 	ChartData            ChartSeries
 	StrategySummary      []StrategySummaryRow
 	PairSummary          []PairSummaryRow
@@ -170,6 +181,7 @@ type AnalysisResult struct {
 	DebugStats           *SummaryDebugStats
 	DrawdownEvents       []DrawdownEvent
 	HeatmapTable         TimeHeatmapTable
+	PortfolioSuggestions []SuggestedPortfolio
 	TradeDurationBuckets []DurationBucket
 }
 
@@ -223,6 +235,7 @@ const defaultChartThreshold = 10
 const defaultDrawdownThresholdPct = "5"
 const defaultDrawdownThreshold = 0.05
 const defaultHeatmapInterval = "hourly"
+const defaultTradesLimit = 300
 
 func main() {
 	tmpl := template.Must(
@@ -711,21 +724,39 @@ func main() {
 	mux.HandleFunc("/strat-exposure", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-		if r.Method != http.MethodGet {
+		var (
+			analysis      AnalysisState
+			portfolioName string
+			inputs        []trades.MappingInput
+		)
+
+		switch r.Method {
+		case http.MethodPost:
+			_ = r.ParseForm()
+			analysis = parseAnalysisState(r.Form)
+			portfolioName = strings.TrimSpace(analysis.Portfolio)
+			inputs = parseMappingRows(r.Form)
+		case http.MethodGet:
+			portfolioName = strings.TrimSpace(r.URL.Query().Get("portfolio"))
+			analysis = loadAnalysisState(portfolioName)
+			if portfolioName != "" {
+				if loaded, err := trades.LoadPortfolioByName(portfolioName); err == nil && loaded != nil {
+					analysis = applyPortfolioFilters(analysis, loaded)
+				}
+				analysis.Portfolio = portfolioName
+			}
+		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 
-		portfolioName := strings.TrimSpace(r.URL.Query().Get("portfolio"))
-		analysis := loadAnalysisState(portfolioName)
-		if portfolioName != "" {
-			if loaded, err := trades.LoadPortfolioByName(portfolioName); err == nil && loaded != nil {
-				analysis = applyPortfolioFilters(analysis, loaded)
-			}
-			analysis.Portfolio = portfolioName
+		var result *AnalysisResult
+		var err error
+		if len(inputs) > 0 {
+			result, err = computeAnalysisResultWithInputs(analysis, inputs)
+		} else {
+			result, err = computeAnalysisResult(analysis)
 		}
-
-		result, err := computeAnalysisResult(analysis)
 		vm := StrategyExposureViewModel{
 			PortfolioName:  portfolioName,
 			AnalysisResult: result,
@@ -1479,6 +1510,9 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 		AnalysisBalance:         analysis.Balance,
 		AnalysisDrawdownPct:     analysis.DrawdownThreshold,
 		AnalysisHeatmapInterval: analysis.HeatmapInterval,
+		AnalysisSuggest:         analysis.SuggestPortfolio,
+		AnalysisTradesLimit:     analysis.TradesLimit,
+		AnalysisTradesOffset:    analysis.TradesOffset,
 		AnalysisPortfolio:       analysis.Portfolio,
 		AnalysisResult:          result,
 		ChartEngine:             chartEngine,
@@ -1504,6 +1538,9 @@ func defaultAnalysisState(portfolioName string) AnalysisState {
 		Balance:           "100000",
 		DrawdownThreshold: defaultDrawdownThresholdPct,
 		HeatmapInterval:   defaultHeatmapInterval,
+		SuggestPortfolio:  false,
+		TradesLimit:       defaultTradesLimit,
+		TradesOffset:      0,
 		Portfolio:         portfolio,
 		ChartsEnabled:     false,
 		ChartsThreshold:   defaultChartThreshold,
@@ -1575,6 +1612,9 @@ func parseAnalysisState(form url.Values) AnalysisState {
 		drawdownThreshold = defaultDrawdownThresholdPct
 	}
 	heatmapInterval := normalizeHeatmapInterval(form.Get("analysis_heatmap_interval"))
+	tradesLimit := normalizeTradesLimit(form.Get("analysis_trades_limit"))
+	tradesOffset := normalizeTradesOffset(form.Get("analysis_trades_offset"))
+	suggestPortfolio := form.Get("analysis_suggest") == "on"
 	chartsEnabledSet := form.Has("analysis_charts_enabled")
 	return AnalysisState{
 		RangeQuick:        strings.TrimSpace(form.Get("analysis_range_quick")),
@@ -1586,6 +1626,9 @@ func parseAnalysisState(form url.Values) AnalysisState {
 		Balance:           strings.TrimSpace(form.Get("analysis_balance")),
 		DrawdownThreshold: drawdownThreshold,
 		HeatmapInterval:   heatmapInterval,
+		SuggestPortfolio:  suggestPortfolio,
+		TradesLimit:       tradesLimit,
+		TradesOffset:      tradesOffset,
 		Portfolio:         strings.TrimSpace(form.Get("analysis_portfolio")),
 		ChartsEnabled:     form.Get("analysis_charts_enabled") == "on",
 		ChartsThreshold:   threshold,
@@ -1846,6 +1889,27 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		return tradeRows[i].EntryTimeSort.Before(tradeRows[j].EntryTimeSort)
 	})
 
+	tradesTotal := len(tradeRows)
+	tradesLimit := state.TradesLimit
+	if tradesLimit <= 0 {
+		tradesLimit = defaultTradesLimit
+	}
+	tradesOffset := state.TradesOffset
+	if tradesOffset < 0 {
+		tradesOffset = 0
+	}
+	if tradesOffset > tradesTotal {
+		tradesOffset = tradesTotal
+	}
+	tradesEnd := tradesOffset + tradesLimit
+	if tradesEnd > tradesTotal {
+		tradesEnd = tradesTotal
+	}
+	shownTrades := tradeRows
+	if tradesTotal > 0 && tradesLimit > 0 {
+		shownTrades = tradeRows[tradesOffset:tradesEnd]
+	}
+
 	chartData := ChartSeries{}
 	if chartsEnabled {
 		sort.Slice(chartPoints, func(i, j int) bool {
@@ -1900,6 +1964,10 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 
 	heatmap := buildTimeHeatmap(tradeRows, state.HeatmapInterval)
 	tradeDurationBuckets := buildTradeDurationBuckets(tradeRows)
+	var suggestions []SuggestedPortfolio
+	if state.SuggestPortfolio {
+		suggestions = buildPortfolioSuggestions(strategySummary)
+	}
 	return &AnalysisResult{
 		Portfolio:            buildPortfolioLabel(state),
 		TradeCount:           len(filtered),
@@ -1917,7 +1985,12 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		EquityR2:             r2,
 		TimeUnderWater:       tuw,
 		Expectancy:           expectancy,
-		Trades:               tradeRows,
+		Trades:               shownTrades,
+		TradesTotal:          tradesTotal,
+		TradesShown:          len(shownTrades),
+		TradesOffset:         tradesOffset,
+		TradesLimit:          tradesLimit,
+		TradesHasMore:        tradesEnd < tradesTotal,
 		ChartData:            chartData,
 		StrategySummary:      strategySummary,
 		PairSummary:          pairSummary,
@@ -1929,6 +2002,7 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		DebugStats:           debugStats,
 		DrawdownEvents:       drawdownEvents,
 		HeatmapTable:         heatmap,
+		PortfolioSuggestions: suggestions,
 		TradeDurationBuckets: tradeDurationBuckets,
 	}, nil
 }
@@ -2285,6 +2359,30 @@ func normalizeDrawdownThreshold(raw string) float64 {
 		return defaultDrawdownThreshold
 	}
 	return parsed / 100
+}
+
+func normalizeTradesLimit(raw string) int {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return defaultTradesLimit
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return defaultTradesLimit
+	}
+	return parsed
+}
+
+func normalizeTradesOffset(raw string) int {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		return 0
+	}
+	return parsed
 }
 
 func resolveChartSettings(state AnalysisState, enabledCount int) (chartsEnabled bool, autoEnabled bool, threshold int) {
