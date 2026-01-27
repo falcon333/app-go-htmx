@@ -95,7 +95,7 @@
     "charts_enabled": false,
     "charts_threshold": 10,
     "charts_enabled_set": false,
-    "updated_at": "2026-01-26T07:09:42.6522133Z"
+    "updated_at": "2026-01-26T09:14:05.7885599Z"
   },
   {
     "portfolio": "Ichi2_2Systems_01-06-2000-01-19-2026_01-25-2026-19-17",
@@ -123,6 +123,20 @@
     "charts_enabled": false,
     "charts_threshold": 10,
     "charts_enabled_set": false,
-    "updated_at": "2026-01-26T07:55:16.3420045Z"
+    "updated_at": "2026-01-26T09:14:36.4459695Z"
+  },
+  {
+    "portfolio": "MES Swing_9Systems_01-26-2016-01-26-2026_01-26-2026-01-15",
+    "range_quick": "",
+    "auto_refresh": false,
+    "n": "",
+    "unit": "Years",
+    "start_date": "2016-01-26",
+    "end_date": "2026-01-26",
+    "balance": "100000",
+    "charts_enabled": false,
+    "charts_threshold": 10,
+    "charts_enabled_set": false,
+    "updated_at": "2026-01-26T09:21:31.942807Z"
   }
 ]

@@ -249,7 +249,7 @@ func EnsureMappingForStrategy(portfolioName, strategyName string) error {
 		ID:            key,
 		StrategyKey:   strategy,
 		PortfolioName: portfolio,
-		Enabled:       true,
+		Enabled:       false,
 		Weight:        1.0,
 		RatioMode:     false,
 		RatioUnit:     1.0,

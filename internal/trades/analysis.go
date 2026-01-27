@@ -9,18 +9,19 @@ import (
 )
 
 type AnalysisSettings struct {
-	Portfolio        string    `json:"portfolio"`
-	RangeQuick       string    `json:"range_quick"`
-	AutoRefresh      bool      `json:"auto_refresh"`
-	N                string    `json:"n"`
-	Unit             string    `json:"unit"`
-	StartDate        string    `json:"start_date"`
-	EndDate          string    `json:"end_date"`
-	Balance          string    `json:"balance"`
-	ChartsEnabled    bool      `json:"charts_enabled"`
-	ChartsThreshold  int       `json:"charts_threshold"`
-	ChartsEnabledSet bool      `json:"charts_enabled_set"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	Portfolio         string    `json:"portfolio"`
+	RangeQuick        string    `json:"range_quick"`
+	AutoRefresh       bool      `json:"auto_refresh"`
+	N                 string    `json:"n"`
+	Unit              string    `json:"unit"`
+	StartDate         string    `json:"start_date"`
+	EndDate           string    `json:"end_date"`
+	Balance           string    `json:"balance"`
+	DrawdownThreshold string    `json:"drawdown_threshold"`
+	ChartsEnabled     bool      `json:"charts_enabled"`
+	ChartsThreshold   int       `json:"charts_threshold"`
+	ChartsEnabledSet  bool      `json:"charts_enabled_set"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type AnalysisSettingsStore struct {

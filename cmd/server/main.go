@@ -42,19 +42,6 @@ type PortfolioViewModel struct {
 	portfolio.Result
 }
 
-type ImportViewModel struct {
-	CSVURL    string
-	Portfolio string
-	Strategy  string
-	StartDate string
-	EndDate   string
-	Timezone  string
-
-	Result *trades.ImportSummary
-
-	FormErrors []string
-}
-
 type BatchImportRow struct {
 	CSVURL    string
 	Strategy  string
@@ -131,50 +118,57 @@ type PortfolioMergeViewModel struct {
 	AnalysisStartDate   string
 	AnalysisEndDate     string
 	AnalysisBalance     string
+	AnalysisDrawdownPct string
 	AnalysisPortfolio   string
 	AnalysisResult      *AnalysisResult
 }
 
 type AnalysisState struct {
-	RangeQuick       string
-	AutoRefresh      bool
-	N                string
-	Unit             string
-	StartDate        string
-	EndDate          string
-	Balance          string
-	Portfolio        string
-	ChartsEnabled    bool
-	ChartsThreshold  int
-	ChartsEnabledSet bool
+	RangeQuick        string
+	AutoRefresh       bool
+	N                 string
+	Unit              string
+	StartDate         string
+	EndDate           string
+	Balance           string
+	DrawdownThreshold string
+	Portfolio         string
+	ChartsEnabled     bool
+	ChartsThreshold   int
+	ChartsEnabledSet  bool
 }
 
 type AnalysisResult struct {
-	Portfolio           string
-	TradeCount          int
-	StartingCapital     float64
-	EndingCapital       float64
-	TotalNetPnL         float64
-	RangeLabel          string
-	StartDate           string
-	EndDate             string
-	NetGainPct          float64
-	CAGR                float64
-	MaxDrawdownPct      float64
-	ProfitFactor        float64
-	UlcerIndex          float64
-	EquityR2            float64
-	TimeUnderWater      float64
-	Expectancy          float64
-	Trades              []AnalysisTradeRow
-	ChartData           ChartSeries
-	StrategySummary     []StrategySummaryRow
-	PairSummary         []PairSummaryRow
-	ExposureSummary     *ExposureSummary
-	ExposureAnalysis    *ExposureAnalysis
-	ExposureHeatmapSpec ExposureHeatmapSpec
-	SummaryError        string
-	DebugStats          *SummaryDebugStats
+	Portfolio            string
+	TradeCount           int
+	StartingCapital      float64
+	EndingCapital        float64
+	TotalNetPnL          float64
+	RangeLabel           string
+	StartDate            string
+	EndDate              string
+	NetGainPct           float64
+	CAGR                 float64
+	MaxDrawdownPct       float64
+	ProfitFactor         float64
+	UlcerIndex           float64
+	EquityR2             float64
+	TimeUnderWater       float64
+	Expectancy           float64
+	Trades               []AnalysisTradeRow
+	ChartData            ChartSeries
+	StrategySummary      []StrategySummaryRow
+	PairSummary          []PairSummaryRow
+	ExposureSummary      *ExposureSummary
+	ExposureAnalysis     *ExposureAnalysis
+	ExposureHeatmapSpec  ExposureHeatmapSpec
+	MonthlyPctTable      MonthlyTable
+	MonthlyUsdTable      MonthlyTable
+	SummaryError         string
+	DebugStats           *SummaryDebugStats
+	DrawdownEvents       []DrawdownEvent
+	HourlyHeatmapTable   HourlyHeatmapTable
+	TradeDurationBuckets []DurationBucket
 }
 
 type StrategyExposureViewModel struct {
@@ -224,6 +218,8 @@ type ImportValidation struct {
 
 const defaultTimezone = "America/Chicago"
 const defaultChartThreshold = 10
+const defaultDrawdownThresholdPct = "5"
+const defaultDrawdownThreshold = 0.05
 
 func main() {
 	tmpl := template.Must(
@@ -233,9 +229,37 @@ func main() {
 			"fmtFloat": fmtFloat,
 			"fmtPct":   fmtPct,
 			"dict":     dict,
+			"seq": func(start, end int) []int {
+				s := make([]int, end-start+1)
+				for i := range s {
+					s[i] = start + i
+				}
+				return s
+			},
+			"mul": func(a, b float64) float64 { return a * b },
+			"div": func(a, b float64) float64 {
+				if b == 0 {
+					return 0
+				}
+				return a / b
+			},
+			"float64": func(i interface{}) float64 {
+				switch v := i.(type) {
+				case int:
+					return float64(v)
+				case int64:
+					return float64(v)
+				case float64:
+					return v
+				default:
+					return 0
+				}
+			},
+			"urlquery": func(v interface{}) string {
+				return template.URLQueryEscaper(v)
+			},
 		}).ParseFiles(
 			"web/templates/portfolio.html",
-			"web/templates/imports.html",
 			"web/templates/imports_batch.html",
 			"web/templates/portfolio_merge.html",
 			"web/templates/strat_exposure.html",
@@ -343,110 +367,6 @@ func main() {
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(errMsg))
-	})
-
-	// =================================================
-	// Trade import UI + handler
-	// =================================================
-	mux.HandleFunc("/imports/trades", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-		if r.Method == http.MethodGet {
-			vm := ImportViewModel{Timezone: defaultTimezone}
-			_ = tmpl.ExecuteTemplate(w, "imports.html", vm)
-			return
-		}
-
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-
-		const maxUploadBytes = 25 << 20
-		if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid multipart form."))
-			return
-		}
-
-		vm := ImportViewModel{
-			CSVURL:    strings.TrimSpace(r.FormValue("csv_url")),
-			Portfolio: strings.TrimSpace(r.FormValue("portfolio_name")),
-			Strategy:  strings.TrimSpace(r.FormValue("strategy_name")),
-			StartDate: strings.TrimSpace(r.FormValue("start_date")),
-			EndDate:   strings.TrimSpace(r.FormValue("end_date")),
-			Timezone:  strings.TrimSpace(r.FormValue("timezone")),
-		}
-
-		input := ImportInput{
-			CSVURL:    vm.CSVURL,
-			Strategy:  vm.Strategy,
-			Portfolio: vm.Portfolio,
-			Timezone:  vm.Timezone,
-			StartDate: vm.StartDate,
-			EndDate:   vm.EndDate,
-		}
-
-		files := r.MultipartForm.File["upload_file"]
-		hasFile := len(files) > 0
-		if !hasFile && vm.CSVURL == "" {
-			vm.FormErrors = []string{"Please provide a CSV URL or upload a file."}
-			_ = tmpl.ExecuteTemplate(w, "import-result", vm)
-			return
-		}
-		if hasFile && len(files) > 1 {
-			vm.FormErrors = []string{"Please upload a single file."}
-			_ = tmpl.ExecuteTemplate(w, "import-result", vm)
-			return
-		}
-		if hasFile {
-			derived := deriveStrategyNameFromFilename(files[0].Filename)
-			if derived == "" {
-				vm.FormErrors = []string{"Unable to derive strategy name from filename."}
-				_ = tmpl.ExecuteTemplate(w, "import-result", vm)
-				return
-			}
-			vm.Strategy = derived
-			input.Strategy = derived
-			input.CSVURL = ""
-		}
-
-		requireURL := !hasFile
-		validation := validateImportInputWithSource(input, requireURL)
-		vm.FormErrors = validation.Errors
-		if len(validation.Errors) > 0 {
-			vm.Timezone = validation.Loc.String()
-			_ = tmpl.ExecuteTemplate(w, "import-result", vm)
-			return
-		}
-
-		var summary trades.ImportSummary
-		var rowErrors []trades.RowError
-		var filtered int
-		var err error
-		if hasFile {
-			parsedTrades, uploadErrors, parseErr := parseUploadFile(files[0], validation.Loc)
-			if parseErr != nil {
-				vm.FormErrors = append(vm.FormErrors, parseErr.Error())
-				_ = tmpl.ExecuteTemplate(w, "import-result", vm)
-				return
-			}
-			summary, rowErrors, filtered, err = executeTradeImportFromTrades(r.Context(), validation, parsedTrades, uploadErrors)
-		} else {
-			summary, rowErrors, filtered, err = executeTradeImport(r.Context(), input, validation)
-		}
-		if err != nil && !errors.Is(err, context.Canceled) {
-			vm.FormErrors = append(vm.FormErrors, err.Error())
-			_ = tmpl.ExecuteTemplate(w, "import-result", vm)
-			return
-		}
-
-		summary.Errors = rowErrors
-		summary.Skipped = len(rowErrors) + filtered
-		vm.Result = &summary
-		vm.Timezone = validation.Loc.String()
-
-		_ = tmpl.ExecuteTemplate(w, "import-result", vm)
 	})
 
 	// =================================================
@@ -1554,6 +1474,7 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 		AnalysisStartDate:   analysis.StartDate,
 		AnalysisEndDate:     analysis.EndDate,
 		AnalysisBalance:     analysis.Balance,
+		AnalysisDrawdownPct: analysis.DrawdownThreshold,
 		AnalysisPortfolio:   analysis.Portfolio,
 		AnalysisResult:      result,
 		ChartEngine:         chartEngine,
@@ -1570,17 +1491,18 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 func defaultAnalysisState(portfolioName string) AnalysisState {
 	portfolio := strings.TrimSpace(portfolioName)
 	return AnalysisState{
-		RangeQuick:       "",
-		AutoRefresh:      false,
-		N:                "",
-		Unit:             "Years",
-		StartDate:        "",
-		EndDate:          "",
-		Balance:          "",
-		Portfolio:        portfolio,
-		ChartsEnabled:    false,
-		ChartsThreshold:  defaultChartThreshold,
-		ChartsEnabledSet: false,
+		RangeQuick:        "",
+		AutoRefresh:       false,
+		N:                 "",
+		Unit:              "Years",
+		StartDate:         "",
+		EndDate:           "",
+		Balance:           "100000",
+		DrawdownThreshold: defaultDrawdownThresholdPct,
+		Portfolio:         portfolio,
+		ChartsEnabled:     false,
+		ChartsThreshold:   defaultChartThreshold,
+		ChartsEnabledSet:  false,
 	}
 }
 
@@ -1598,6 +1520,9 @@ func loadAnalysisState(portfolioName string) AnalysisState {
 	state.StartDate = stored.StartDate
 	state.EndDate = stored.EndDate
 	state.Balance = stored.Balance
+	if strings.TrimSpace(stored.DrawdownThreshold) != "" {
+		state.DrawdownThreshold = stored.DrawdownThreshold
+	}
 	state.Portfolio = stored.Portfolio
 	state.ChartsEnabled = stored.ChartsEnabled
 	state.ChartsEnabledSet = stored.ChartsEnabledSet
@@ -1614,17 +1539,18 @@ func saveAnalysisState(state AnalysisState) error {
 	}
 
 	return trades.SaveAnalysisSettings(trades.AnalysisSettings{
-		Portfolio:        strings.TrimSpace(state.Portfolio),
-		RangeQuick:       state.RangeQuick,
-		AutoRefresh:      state.AutoRefresh,
-		N:                state.N,
-		Unit:             state.Unit,
-		StartDate:        state.StartDate,
-		EndDate:          state.EndDate,
-		Balance:          state.Balance,
-		ChartsEnabled:    state.ChartsEnabled,
-		ChartsThreshold:  normalizeChartThreshold(state.ChartsThreshold),
-		ChartsEnabledSet: state.ChartsEnabledSet,
+		Portfolio:         strings.TrimSpace(state.Portfolio),
+		RangeQuick:        state.RangeQuick,
+		AutoRefresh:       state.AutoRefresh,
+		N:                 state.N,
+		Unit:              state.Unit,
+		StartDate:         state.StartDate,
+		EndDate:           state.EndDate,
+		Balance:           state.Balance,
+		DrawdownThreshold: strings.TrimSpace(state.DrawdownThreshold),
+		ChartsEnabled:     state.ChartsEnabled,
+		ChartsThreshold:   normalizeChartThreshold(state.ChartsThreshold),
+		ChartsEnabledSet:  state.ChartsEnabledSet,
 	})
 }
 
@@ -1635,19 +1561,24 @@ func parseAnalysisState(form url.Values) AnalysisState {
 			threshold = parsed
 		}
 	}
+	drawdownThreshold := strings.TrimSpace(form.Get("analysis_drawdown_threshold"))
+	if drawdownThreshold == "" {
+		drawdownThreshold = defaultDrawdownThresholdPct
+	}
 	chartsEnabledSet := form.Has("analysis_charts_enabled")
 	return AnalysisState{
-		RangeQuick:       strings.TrimSpace(form.Get("analysis_range_quick")),
-		AutoRefresh:      form.Get("analysis_auto_refresh") == "on",
-		N:                strings.TrimSpace(form.Get("analysis_n")),
-		Unit:             strings.TrimSpace(form.Get("analysis_unit")),
-		StartDate:        strings.TrimSpace(form.Get("analysis_start_date")),
-		EndDate:          strings.TrimSpace(form.Get("analysis_end_date")),
-		Balance:          strings.TrimSpace(form.Get("analysis_balance")),
-		Portfolio:        strings.TrimSpace(form.Get("analysis_portfolio")),
-		ChartsEnabled:    form.Get("analysis_charts_enabled") == "on",
-		ChartsThreshold:  threshold,
-		ChartsEnabledSet: chartsEnabledSet,
+		RangeQuick:        strings.TrimSpace(form.Get("analysis_range_quick")),
+		AutoRefresh:       form.Get("analysis_auto_refresh") == "on",
+		N:                 strings.TrimSpace(form.Get("analysis_n")),
+		Unit:              strings.TrimSpace(form.Get("analysis_unit")),
+		StartDate:         strings.TrimSpace(form.Get("analysis_start_date")),
+		EndDate:           strings.TrimSpace(form.Get("analysis_end_date")),
+		Balance:           strings.TrimSpace(form.Get("analysis_balance")),
+		DrawdownThreshold: drawdownThreshold,
+		Portfolio:         strings.TrimSpace(form.Get("analysis_portfolio")),
+		ChartsEnabled:     form.Get("analysis_charts_enabled") == "on",
+		ChartsThreshold:   threshold,
+		ChartsEnabledSet:  chartsEnabledSet,
 	}
 }
 
@@ -1707,7 +1638,7 @@ func computeAnalysisResultWithInputs(state AnalysisState, inputs []trades.Mappin
 		if _, ok := mapByKey[key]; !ok {
 			mapByKey[key] = trades.PortfolioMapping{
 				Strategy:    strings.TrimSpace(strategy),
-				Enabled:     true,
+				Enabled:     false,
 				Weight:      1.0,
 				RatioMode:   false,
 				RatioUnit:   1.0,
@@ -1923,6 +1854,8 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 	strategySummary := buildStrategySummary(summaryTrades, startingCapital, weights)
 	pairSummary := buildPairSummary(summaryTrades, startingCapital, weights)
 	exposureSummary, exposureAnalysis := buildExposureAnalysis(exposureTrades)
+	monthlyPct, monthlyUsd := buildMonthlyReturnTables(summaryTrades, startingCapital)
+	drawdownEvents := buildDrawdownEvents(summaryTrades, startingCapital, normalizeDrawdownThreshold(state.DrawdownThreshold), 10)
 	heatmapSpec := ExposureHeatmapSpec{
 		JaccardMid:  0.20,
 		JaccardMax:  0.50,
@@ -1954,31 +1887,38 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 		}
 	}
 
+	hourlyHeatmap := buildHourlyHeatmap(tradeRows)
+	tradeDurationBuckets := buildTradeDurationBuckets(tradeRows)
 	return &AnalysisResult{
-		Portfolio:           buildPortfolioLabel(state),
-		TradeCount:          len(filtered),
-		StartingCapital:     startingCapital,
-		EndingCapital:       result.EndingCapital,
-		TotalNetPnL:         result.TotalNetPnL,
-		RangeLabel:          label,
-		StartDate:           formatDatePtr(start),
-		EndDate:             formatDatePtr(end),
-		NetGainPct:          netGainPct,
-		CAGR:                cagr,
-		MaxDrawdownPct:      maxDdPct,
-		ProfitFactor:        profitFactor,
-		UlcerIndex:          ulcer,
-		EquityR2:            r2,
-		TimeUnderWater:      tuw,
-		Expectancy:          expectancy,
-		Trades:              tradeRows,
-		ChartData:           chartData,
-		StrategySummary:     strategySummary,
-		PairSummary:         pairSummary,
-		ExposureSummary:     exposureSummary,
-		ExposureAnalysis:    exposureAnalysis,
-		ExposureHeatmapSpec: heatmapSpec,
-		DebugStats:          debugStats,
+		Portfolio:            buildPortfolioLabel(state),
+		TradeCount:           len(filtered),
+		StartingCapital:      startingCapital,
+		EndingCapital:        result.EndingCapital,
+		TotalNetPnL:          result.TotalNetPnL,
+		RangeLabel:           label,
+		StartDate:            formatDatePtr(start),
+		EndDate:              formatDatePtr(end),
+		NetGainPct:           netGainPct,
+		CAGR:                 cagr,
+		MaxDrawdownPct:       maxDdPct,
+		ProfitFactor:         profitFactor,
+		UlcerIndex:           ulcer,
+		EquityR2:             r2,
+		TimeUnderWater:       tuw,
+		Expectancy:           expectancy,
+		Trades:               tradeRows,
+		ChartData:            chartData,
+		StrategySummary:      strategySummary,
+		PairSummary:          pairSummary,
+		ExposureSummary:      exposureSummary,
+		ExposureAnalysis:     exposureAnalysis,
+		ExposureHeatmapSpec:  heatmapSpec,
+		MonthlyPctTable:      monthlyPct,
+		MonthlyUsdTable:      monthlyUsd,
+		DebugStats:           debugStats,
+		DrawdownEvents:       drawdownEvents,
+		HourlyHeatmapTable:   hourlyHeatmap,
+		TradeDurationBuckets: tradeDurationBuckets,
 	}, nil
 }
 
@@ -2227,7 +2167,7 @@ func buildMappingRows(strategies []string, saved *trades.Portfolio) []MappingRow
 
 		rows = append(rows, MappingRowView{
 			StrategyKey: key,
-			Enabled:     true,
+			Enabled:     false,
 			Weight:      1.0,
 			RatioMode:   false,
 			RatioUnit:   1.0,
@@ -2284,7 +2224,7 @@ func buildPortfolioMappingMap(strategies []string, saved *trades.Portfolio) map[
 			}
 			mapByKey[key] = trades.PortfolioMapping{
 				Strategy:    strings.TrimSpace(strategy),
-				Enabled:     true,
+				Enabled:     false,
 				Weight:      1.0,
 				RatioMode:   false,
 				RatioUnit:   1.0,
@@ -2322,6 +2262,21 @@ func normalizeChartThreshold(value int) int {
 		return defaultChartThreshold
 	}
 	return value
+}
+
+func normalizeDrawdownThreshold(raw string) float64 {
+	val := strings.TrimSpace(raw)
+	if val == "" {
+		return defaultDrawdownThreshold
+	}
+	parsed, err := strconv.ParseFloat(val, 64)
+	if err != nil || parsed <= 0 {
+		return defaultDrawdownThreshold
+	}
+	if parsed > 1 {
+		return parsed / 100
+	}
+	return parsed
 }
 
 func resolveChartSettings(state AnalysisState, enabledCount int) (chartsEnabled bool, autoEnabled bool, threshold int) {

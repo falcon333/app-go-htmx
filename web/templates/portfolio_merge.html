@@ -51,6 +51,22 @@
         .accordion-chevron.rotate-180 {
             transform: rotate(180deg);
         }
+        .notes-field {
+            min-height: 32px;
+            resize: vertical;
+            transition: all 0.15s ease;
+        }
+        .notes-field.expanded {
+            width: 360px;
+            min-height: 96px;
+        }
+        .heatmap-pos-1 { background-color: #ecfdf3; color: #166534; }
+        .heatmap-pos-2 { background-color: #bbf7d0; color: #14532d; }
+        .heatmap-pos-3 { background-color: #86efac; color: #14532d; }
+        .heatmap-neg-1 { background-color: #fee2e2; color: #991b1b; }
+        .heatmap-neg-2 { background-color: #fecaca; color: #7f1d1d; }
+        .heatmap-neg-3 { background-color: #fca5a5; color: #7f1d1d; }
+        .heatmap-zero { background-color: #f8fafc; color: #475569; }
     </style>
 </head>
 
@@ -59,11 +75,9 @@
     <div class="flex items-center justify-between mb-6">
         <h1 class="text-3xl font-bold">Portfolio Merge</h1>
         <div class="space-x-3 text-sm">
-            <a class="text-blue-600 hover:underline" href="/imports/trades">Import</a>
             <a class="text-blue-600 hover:underline" href="/import/batch">Batch import</a>
             <a class="text-blue-600 hover:underline" href="/scoring-weights">Scoring Weights</a>
             <a class="text-blue-600 hover:underline" href="/strat-exposure{{ if .AnalysisPortfolio }}?portfolio={{ urlquery .AnalysisPortfolio }}{{ end }}">StratExposure</a>
-            <a class="text-blue-600 hover:underline" href="/portfolio">Back to portfolio</a>
         </div>
     </div>
 
@@ -143,6 +157,10 @@
                                 <input id="strategy-weight-bulk" class="w-20 rounded border border-gray-200 px-2 py-1 text-xs" type="number" step="0.01" placeholder="1.0">
                                 <button type="button" id="strategy-weight-apply-all" class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">Apply to All</button>
                                 <button type="button" id="strategy-weight-apply-enabled" class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">Apply to Enabled</button>
+                                <button type="button" id="strategy-weight-apply-visible" class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">Apply to Visible</button>
+                            </div>
+                            <div class="ml-auto">
+                                <button type="button" id="strategy-table-save-config" class="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100">Save table config</button>
                             </div>
                         </div>
                         <div class="overflow-x-auto">
@@ -187,7 +205,7 @@
                                         <input class="w-full rounded border px-2 py-1" type="number" step="0.01" name="rows[{{ $i }}].ratio_amount" value="{{ $row.RatioAmount }}">
                                     </td>
                                     <td class="border px-3 py-2" data-value="{{ $row.Notes }}">
-                                        <input class="w-full rounded border px-2 py-1" type="text" name="rows[{{ $i }}].notes" value="{{ $row.Notes }}">
+                                        <textarea class="notes-field w-full rounded border px-2 py-1" name="rows[{{ $i }}].notes" rows="1">{{ $row.Notes }}</textarea>
                                     </td>
                                 </tr>
                                 {{ end }}
@@ -259,6 +277,11 @@
                     <input class="w-full rounded border px-2 py-1 text-sm" type="number" step="any" name="analysis_balance" value="{{ .AnalysisBalance }}" placeholder="">
                 </div>
 
+                <div>
+                    <label class="block text-sm font-medium mb-1">Drawdown Threshold (%)</label>
+                    <input class="w-full rounded border px-2 py-1 text-sm" type="number" step="0.1" min="0.1" name="analysis_drawdown_threshold" value="{{ .AnalysisDrawdownPct }}" placeholder="5">
+                </div>
+
                 <button type="submit" class="w-full inline-flex items-center justify-center rounded px-5 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700">
                     Update Dashboard
                 </button>
@@ -276,8 +299,8 @@
                 <div><span class="font-medium">Range:</span> {{ .AnalysisResult.RangeLabel }}</div>
                 <div><span class="font-medium">Dates:</span> {{ .AnalysisResult.StartDate }} {{ if .AnalysisResult.EndDate }}→ {{ .AnalysisResult.EndDate }}{{ end }}</div>
                 <div><span class="font-medium">Starting Capital:</span> {{ .AnalysisResult.StartingCapital }}</div>
-                <div><span class="font-medium">Ending Capital:</span> {{ .AnalysisResult.EndingCapital }}</div>
-                <div><span class="font-medium">Total PnL:</span> {{ .AnalysisResult.TotalNetPnL }}</div>
+                <div><span class="font-medium">Ending Capital:</span> {{ printf "%.2f" .AnalysisResult.EndingCapital }}</div>
+                <div><span class="font-medium">Total PnL:</span> {{ printf "%.2f" .AnalysisResult.TotalNetPnL }}</div>
                 <div><span class="font-medium">Net Gain %:</span> {{ printf "%.2f%%" .AnalysisResult.NetGainPct }}</div>
                 <div><span class="font-medium">CAGR:</span> {{ printf "%.2f%%" .AnalysisResult.CAGR }}</div>
                 <div><span class="font-medium">Max Drawdown %:</span> {{ printf "%.2f%%" .AnalysisResult.MaxDrawdownPct }}</div>
@@ -334,20 +357,20 @@
                                         <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="win_rate" data-type="number" aria-sort="none">Win% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
                                         <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="net_usd" data-type="number" aria-sort="none">Net $ Gain <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
                                         <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="net" data-type="number" aria-sort="none">Net Gain % <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="cagr" data-type="number" aria-sort="none">CAGR <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="max_dd" data-type="number" aria-sort="none">MaxDD% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="cagr" data-type="number" aria-sort="none" title="CAGR: Compound annual growth rate based on starting/ending capital over the selected date range.">CAGR <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="max_dd" data-type="number" aria-sort="none" title="MaxDD%: Maximum peak-to-trough drawdown percentage over the period.">MaxDD% <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
                                         <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_return" data-type="number" aria-sort="none">Avg Return <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
                                         <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="risk_reward" data-type="number" aria-sort="none">R:R <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
                                         <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="profit_factor" data-type="number" aria-sort="none">PF <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="ulcer" data-type="number" aria-sort="none">Ulcer Index <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="r2" data-type="number" aria-sort="none">Equity R² <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="tuw" data-type="number" aria-sort="none">TUW <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="ulcer" data-type="number" aria-sort="none" title="Ulcer Index: Root-mean-square of drawdowns; lower means smoother equity curve.">Ulcer Index <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="r2" data-type="number" aria-sort="none" title="Equity R²: Goodness-of-fit of the equity curve against time; closer to 1 means smoother trend.">Equity R² <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="tuw" data-type="number" aria-sort="none" title="TUW (Time Under Water): Fraction of time equity is below its prior peak; lower is better.">TUW <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
                                         <th class="border px-2 py-1 text-right cursor-pointer select-none" data-col="scorecard" data-type="number" aria-sort="none">Scorecard <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="sleep_well" data-type="number" aria-sort="none">Sleep Well Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_dd_days" data-type="number" aria-sort="none">Avg DD Days <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="recovery" data-type="number" aria-sort="none">Rec Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="sleep_well" data-type="number" aria-sort="none" title="Sleep Well Score: Comfort score derived from ulcer index and maximum drawdown; higher is better.">Sleep Well Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="avg_dd_days" data-type="number" aria-sort="none" title="Avg DD Days: Average duration (in days) of drawdown periods.">Avg DD Days <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="recovery" data-type="number" aria-sort="none" title="Rec Score: Recovery score based on how quickly equity recovers from drawdowns.">Rec Score <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
                                         <th class="summary-col-optional border px-2 py-1 text-left cursor-pointer select-none" data-col="tier" data-type="string" aria-sort="none">Tier <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
-                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="allocation" data-type="number" aria-sort="none">alloc <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
+                                        <th class="summary-col-optional border px-2 py-1 text-right cursor-pointer select-none" data-col="allocation" data-type="number" aria-sort="none" title="alloc: Suggested allocation weight from the scorecard/portfolio sizing rules.">alloc <span class="sort-indicator text-[10px] text-gray-400">↕</span></th>
                                     </tr>
                                     </thead>
                                     <tbody>
@@ -464,6 +487,239 @@
         </div>
 
         <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
+            <button type="button" class="accordion-header flex items-center justify-between text-sm font-medium text-gray-800" data-accordion-target="drawdown-events-panel" aria-expanded="false" aria-controls="drawdown-events-panel">
+                <span>Major Drawdowns</span>
+                <span class="accordion-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div id="drawdown-events-panel" class="mt-3 hidden">
+                {{ $events := .AnalysisResult.DrawdownEvents }}
+                {{ if gt (len $events) 0 }}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs border border-gray-200 text-center">
+                        <thead class="bg-gray-50">
+                        <tr>
+                            <th class="border px-2 py-1">Start</th>
+                            <th class="border px-2 py-1">Trough</th>
+                            <th class="border px-2 py-1">End</th>
+                            <th class="border px-2 py-1">Depth %</th>
+                            <th class="border px-2 py-1">Depth $</th>
+                            <th class="border px-2 py-1">Recovery</th>
+                            <th class="border px-2 py-1">Top Strategies</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{ range $e := $events }}
+                        <tr class="odd:bg-white even:bg-gray-50">
+                            <td class="border px-2 py-1">{{ $e.Start }}</td>
+                            <td class="border px-2 py-1">{{ $e.Trough }}</td>
+                            <td class="border px-2 py-1">{{ $e.End }}</td>
+                            <td class="border px-2 py-1 text-red-600">{{ printf "%.2f%%" (mul $e.DepthPct 100) }}</td>
+                            <td class="border px-2 py-1 text-red-600">
+                                {{ if lt $e.DepthUsd 0.0 }}{{ printf "-$%.2f" (mul $e.DepthUsd -1) }}{{ else }}{{ printf "$%.2f" $e.DepthUsd }}{{ end }}
+                            </td>
+                            <td class="border px-2 py-1">
+                                {{ if $e.Open }}Open{{ else }}{{ printf "%.1f d" $e.RecoveryDays }}{{ end }}
+                            </td>
+                            <td class="border px-2 py-1">
+                                {{ if gt (len $e.Contributors) 0 }}
+                                    <div class="flex flex-wrap justify-center gap-1">
+                                        {{ range $c := $e.Contributors }}
+                                            <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-700">{{ $c.Strategy }} {{ printf "%.0f%%" (mul $c.Share 100) }}</span>
+                                        {{ end }}
+                                    </div>
+                                {{ else }}—{{ end }}
+                            </td>
+                        </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-2 text-xs text-gray-500">Top drawdowns (≥5% depth) with recovery time and contributing strategies.</div>
+                {{ else }}
+                <div class="text-sm text-gray-500">No drawdowns exceeding 5% in this range.</div>
+                {{ end }}
+            </div>
+            <button type="button" class="accordion-header flex items-center justify-between text-sm font-medium text-gray-800" data-accordion-target="trade-duration-panel" aria-expanded="false" aria-controls="trade-duration-panel">
+                <span>Trade Duration Analysis</span>
+                <span class="accordion-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div id="trade-duration-panel" class="mt-3 hidden">
+                {{ $buckets := .AnalysisResult.TradeDurationBuckets }}
+                {{ if gt (len $buckets) 0 }}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs border border-gray-200 text-center">
+                        <thead class="bg-gray-50">
+                        <tr>
+                            <th class="border px-2 py-1">Duration</th>
+                            <th class="border px-2 py-1">Avg PnL</th>
+                            <th class="border px-2 py-1">Win Rate</th>
+                            <th class="border px-2 py-1">Trades</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{ range $b := $buckets }}
+                        <tr class="odd:bg-white even:bg-gray-50">
+                            <td class="border px-2 py-1">{{ $b.Label }}</td>
+                            <td class="border px-2 py-1 {{ if gt $b.AvgPnL 0.0 }}text-emerald-700{{ else if lt $b.AvgPnL 0.0 }}text-red-600{{ end }}">{{ printf "%.2f" $b.AvgPnL }}</td>
+                            <td class="border px-2 py-1">{{ if gt $b.Count 0 }}{{ printf "%.0f%%" (mul (div (float64 $b.WinCount) (float64 $b.Count)) 100) }}{{ else }}—{{ end }}</td>
+                            <td class="border px-2 py-1">{{ $b.Count }}</td>
+                        </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-2 text-xs text-gray-500">Shows average PnL and win rate for trades grouped by holding duration (entry to exit).</div>
+                {{ else }}
+                <div class="text-sm text-gray-500">No trade duration data yet. Run Update Dashboard.</div>
+                {{ end }}
+            </div>
+            <button type="button" class="accordion-header flex items-center justify-between text-sm font-medium text-gray-800" data-accordion-target="hourly-heatmap-panel" aria-expanded="false" aria-controls="hourly-heatmap-panel">
+                <span>Hourly Heatmap (Chicago Time)</span>
+                <span class="accordion-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div id="hourly-heatmap-panel" class="mt-3 hidden">
+                {{ $heatmap := .AnalysisResult.HourlyHeatmapTable }}
+                {{ if gt (len $heatmap.Rows) 0 }}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs border border-gray-200 text-center">
+                        <thead class="bg-gray-50">
+                        <tr>
+                            <th class="border px-2 py-1 text-left">Label</th>
+                            {{ range $h := (seq 0 23) }}
+                                <th class="border px-2 py-1">{{ printf "%02d:00" $h }}</th>
+                            {{ end }}
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{ range $row := $heatmap.Rows }}
+                        <tr class="odd:bg-white even:bg-gray-50">
+                            <td class="border px-2 py-1 text-left font-medium">{{ $row.Label }}</td>
+                            {{ range $cell := $row.Cells }}
+                                {{ $class := "" }}
+                                {{ if gt $cell.Count 0 }}
+                                    {{ if gt $cell.AvgPnL 0.0 }}
+                                        {{ $class = "heatmap-pos-2" }}
+                                    {{ else if lt $cell.AvgPnL 0.0 }}
+                                        {{ $class = "heatmap-neg-2" }}
+                                    {{ else }}
+                                        {{ $class = "heatmap-zero" }}
+                                    {{ end }}
+                                {{ end }}
+                                <td class="border px-2 py-1 {{ $class }}" title="Trades: {{ $cell.Count }}, Wins: {{ $cell.WinCount }}">
+                                    {{ if gt $cell.Count 0 }}
+                                        <div>{{ printf "%.2f" $cell.AvgPnL }}</div>
+                                        <div class="text-[10px] text-gray-500">{{ $cell.WinCount }}/{{ $cell.Count }}</div>
+                                    {{ else }}
+                                        <span class="text-gray-300">—</span>
+                                    {{ end }}
+                                </td>
+                            {{ end }}
+                        </tr>
+                        {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-2 text-xs text-gray-500">Each cell shows average PnL for trades entered in that hour (Chicago time). Subtext: win count / total. Color: green = avg profit, red = avg loss, gray = no trades.</div>
+                {{ else }}
+                <div class="text-sm text-gray-500">No hourly data yet. Run Update Dashboard.</div>
+                {{ end }}
+            </div>
+        </div>
+            <button type="button" class="accordion-header flex items-center justify-between text-sm font-medium text-gray-800" data-accordion-target="monthly-returns-panel" aria-expanded="false" aria-controls="monthly-returns-panel">
+                <span>Monthly Returns</span>
+                <span class="accordion-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div id="monthly-returns-panel" class="mt-3 hidden">
+                {{ $monthlyPct := .AnalysisResult.MonthlyPctTable }}
+                {{ $monthlyUsd := .AnalysisResult.MonthlyUsdTable }}
+                {{ if or (gt (len $monthlyPct.Rows) 0) (gt (len $monthlyUsd.Rows) 0) }}
+                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                        <div class="inline-flex rounded border border-gray-200 bg-gray-50 p-1 text-xs">
+                            <button type="button" id="monthly-tab-pct" class="rounded px-3 py-1 bg-white text-blue-700 shadow" data-monthly-tab="pct">Monthly %</button>
+                            <button type="button" id="monthly-tab-usd" class="rounded px-3 py-1 text-gray-600 hover:text-gray-800" data-monthly-tab="usd">Monthly $</button>
+                        </div>
+                        <span class="text-xs text-gray-500">Heatmap scale uses ±10% of the analysis starting capital.</span>
+                    </div>
+                    <div class="space-y-4">
+                        <div id="monthly-table-pct">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full text-xs border border-gray-200">
+                                    <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="border px-2 py-1 text-left">Year</th>
+                                        {{ range $monthlyPct.MonthLabels }}
+                                            <th class="border px-2 py-1 text-right">{{ . }}</th>
+                                        {{ end }}
+                                        <th class="border px-2 py-1 text-right">Year %</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {{ range $monthlyPct.Rows }}
+                                        <tr class="odd:bg-white even:bg-gray-50">
+                                            <td class="border px-2 py-1 text-left">{{ .Year }}</td>
+                                            {{ range .Cells }}
+                                                <td class="border px-2 py-1 text-right {{ .Class }}">{{ if .HasValue }}{{ .Display }}{{ end }}</td>
+                                            {{ end }}
+                                            <td class="border px-2 py-1 text-right {{ .YearTotal.Class }}">{{ if .YearTotal.HasValue }}{{ .YearTotal.Display }}{{ end }}</td>
+                                        </tr>
+                                    {{ end }}
+                                    {{ if $monthlyPct.Totals.Year }}
+                                        <tr class="bg-gray-100 font-medium">
+                                            <td class="border px-2 py-1 text-left">{{ $monthlyPct.Totals.Year }}</td>
+                                            {{ range $monthlyPct.Totals.Cells }}
+                                                <td class="border px-2 py-1 text-right {{ .Class }}">{{ if .HasValue }}{{ .Display }}{{ end }}</td>
+                                            {{ end }}
+                                            <td class="border px-2 py-1 text-right {{ $monthlyPct.Totals.YearTotal.Class }}">{{ if $monthlyPct.Totals.YearTotal.HasValue }}{{ $monthlyPct.Totals.YearTotal.Display }}{{ end }}</td>
+                                        </tr>
+                                    {{ end }}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="monthly-table-usd" class="hidden">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full text-xs border border-gray-200">
+                                    <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="border px-2 py-1 text-left">Year</th>
+                                        {{ range $monthlyUsd.MonthLabels }}
+                                            <th class="border px-2 py-1 text-right">{{ . }}</th>
+                                        {{ end }}
+                                        <th class="border px-2 py-1 text-right">Year $</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {{ range $monthlyUsd.Rows }}
+                                        <tr class="odd:bg-white even:bg-gray-50">
+                                            <td class="border px-2 py-1 text-left">{{ .Year }}</td>
+                                            {{ range .Cells }}
+                                                <td class="border px-2 py-1 text-right {{ .Class }}">{{ if .HasValue }}{{ .Display }}{{ end }}</td>
+                                            {{ end }}
+                                            <td class="border px-2 py-1 text-right {{ .YearTotal.Class }}">{{ if .YearTotal.HasValue }}{{ .YearTotal.Display }}{{ end }}</td>
+                                        </tr>
+                                    {{ end }}
+                                    {{ if $monthlyUsd.Totals.Year }}
+                                        <tr class="bg-gray-100 font-medium">
+                                            <td class="border px-2 py-1 text-left">{{ $monthlyUsd.Totals.Year }}</td>
+                                            {{ range $monthlyUsd.Totals.Cells }}
+                                                <td class="border px-2 py-1 text-right {{ .Class }}">{{ if .HasValue }}{{ .Display }}{{ end }}</td>
+                                            {{ end }}
+                                            <td class="border px-2 py-1 text-right {{ $monthlyUsd.Totals.YearTotal.Class }}">{{ if $monthlyUsd.Totals.YearTotal.HasValue }}{{ $monthlyUsd.Totals.YearTotal.Display }}{{ end }}</td>
+                                        </tr>
+                                    {{ end }}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                {{ else }}
+                    <div class="text-sm text-gray-500">No monthly data yet. Run Update Dashboard.</div>
+                {{ end }}
+            </div>
+        </div>
+
+        <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
             <button type="button" class="accordion-header flex items-center justify-between text-sm font-medium text-gray-800" data-accordion-target="charts-panel" aria-expanded="false" aria-controls="charts-panel" data-accordion-init="charts">
                 <span>Charts</span>
                 <span class="accordion-chevron" aria-hidden="true">▾</span>
@@ -485,8 +741,8 @@
                 </div>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                     <div class="inline-flex rounded border border-gray-200 bg-gray-50 p-1 text-xs">
-                    <a href="{{ .ChartLinkJS }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "chartjs" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">chartjs</a>
-                    <a href="{{ .ChartLinkTV }}" class="rounded px-3 py-1 {{ if eq .ChartEngine "tv" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">tv</a>
+                    <a href="{{ .ChartLinkJS }}" data-chart-switch="chartjs" class="rounded px-3 py-1 {{ if eq .ChartEngine "chartjs" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">chartjs</a>
+                    <a href="{{ .ChartLinkTV }}" data-chart-switch="tv" class="rounded px-3 py-1 {{ if eq .ChartEngine "tv" }}bg-white text-blue-700 shadow{{ else }}text-gray-600 hover:text-gray-800{{ end }}">tv</a>
                     </div>
                     <label class="ml-auto inline-flex items-center gap-2 text-xs text-gray-600">
                         <span>Drawdown % baseline</span>
@@ -646,6 +902,8 @@
         const autoRefresh = document.getElementById("analysis-auto-refresh");
         const applyBtn = document.getElementById("analysis-apply");
         const quickButtons = document.querySelectorAll(".quick-btn");
+        const chartLinks = document.querySelectorAll("[data-chart-switch]");
+        const chartInput = form ? form.querySelector("input[name='chart']") : null;
 
         function syncMappingsToAnalysisForm() {
             if (!form) return;
@@ -749,6 +1007,21 @@
             btn.addEventListener("click", () => applyQuick(btn.dataset.range));
         });
 
+        chartLinks.forEach(link => {
+            link.addEventListener("click", (event) => {
+                if (!form) return;
+                event.preventDefault();
+                try {
+                    sessionStorage.setItem("chartsPanelOpen", "true");
+                    sessionStorage.setItem("chartsPanelScroll", "true");
+                } catch (_) {}
+                if (chartInput) {
+                    chartInput.value = link.dataset.chartSwitch || chartInput.value;
+                }
+                submitWithMappings();
+            });
+        });
+
         applyBtn.addEventListener("click", () => {
             const nValue = document.querySelector("[name='analysis_n']").value;
             const unitValue = document.querySelector("[name='analysis_unit']").value;
@@ -794,7 +1067,8 @@
         }
     })();
 </script>
-{{ if .AnalysisResult.Trades }}
+{{ with .AnalysisResult }}
+{{ if .Trades }}
 <script>
     window.addEventListener("load", () => {
         const table = document.getElementById("filtered-trades-table");
@@ -865,6 +1139,7 @@
         }
     });
 </script>
+{{ end }}
 {{ end }}
 {{ if .AnalysisResult }}
 <script>
@@ -1056,6 +1331,48 @@
                 setAccordionState(button, panel, !isOpen);
             });
         });
+
+        const monthlyTabPct = document.getElementById("monthly-tab-pct");
+        const monthlyTabUsd = document.getElementById("monthly-tab-usd");
+        const monthlyTablePct = document.getElementById("monthly-table-pct");
+        const monthlyTableUsd = document.getElementById("monthly-table-usd");
+
+        const setMonthlyTab = (tab) => {
+            if (!monthlyTabPct || !monthlyTabUsd || !monthlyTablePct || !monthlyTableUsd) return;
+            const isPct = tab === "pct";
+            monthlyTablePct.classList.toggle("hidden", !isPct);
+            monthlyTableUsd.classList.toggle("hidden", isPct);
+            monthlyTabPct.classList.toggle("bg-white", isPct);
+            monthlyTabPct.classList.toggle("text-blue-700", isPct);
+            monthlyTabPct.classList.toggle("shadow", isPct);
+            monthlyTabPct.classList.toggle("text-gray-600", !isPct);
+            monthlyTabUsd.classList.toggle("bg-white", !isPct);
+            monthlyTabUsd.classList.toggle("text-blue-700", !isPct);
+            monthlyTabUsd.classList.toggle("shadow", !isPct);
+            monthlyTabUsd.classList.toggle("text-gray-600", isPct);
+        };
+
+        if (monthlyTabPct && monthlyTabUsd) {
+            monthlyTabPct.addEventListener("click", () => setMonthlyTab("pct"));
+            monthlyTabUsd.addEventListener("click", () => setMonthlyTab("usd"));
+            setMonthlyTab("pct");
+        }
+
+        try {
+            const keepOpen = sessionStorage.getItem("chartsPanelOpen") === "true" || window.location.hash === "#charts-panel";
+            if (keepOpen) {
+                const chartButton = document.querySelector("[data-accordion-target='charts-panel']");
+                const chartPanel = document.getElementById("charts-panel");
+                if (chartButton && chartPanel) {
+                    setAccordionState(chartButton, chartPanel, true);
+                    if (sessionStorage.getItem("chartsPanelScroll") === "true") {
+                        chartPanel.scrollIntoView({ behavior: "instant", block: "start" });
+                    }
+                }
+            }
+            sessionStorage.removeItem("chartsPanelOpen");
+            sessionStorage.removeItem("chartsPanelScroll");
+        } catch (_) {}
     });
 </script>
 <script>
@@ -1310,13 +1627,21 @@
                     .map(term => term.trim().toLowerCase())
                     .filter(Boolean);
 
+            const parseSearchTerms = (value) =>
+                String(value || "")
+                    .split(",")
+                    .map(term => term.trim().toLowerCase())
+                    .filter(Boolean);
+
             const applyFilter = () => {
-                const query = input.value.trim().toLowerCase();
+                const searchTerms = parseSearchTerms(input.value);
                 const hideTerms = parseHideTerms(hideInput.value);
                 rows.forEach(row => {
                     const key = (row.dataset.strategyKey || "").toLowerCase();
                     const notes = (row.querySelector("input[name$='.notes']")?.value || "").toLowerCase();
-                    const matchSearch = query === "" || key.includes(query) || notes.includes(query);
+                    const matchSearch =
+                        searchTerms.length === 0 ||
+                        searchTerms.some(term => key.includes(term) || notes.includes(term));
                     const matchHide = hideTerms.length === 0 || !hideTerms.some(term => key.includes(term) || notes.includes(term));
                     row.classList.toggle("hidden", !(matchSearch && matchHide));
                 });
@@ -1341,6 +1666,22 @@
                 hideInput.value = storedHide;
             }
 
+            const storedConfig = window.localStorage.getItem("strategyTableConfig");
+            if (storedConfig) {
+                try {
+                    const parsed = JSON.parse(storedConfig);
+                    if (parsed && typeof parsed.search === "string") {
+                        input.value = parsed.search;
+                    }
+                    if (parsed && typeof parsed.hide === "string") {
+                        hideInput.value = parsed.hide;
+                    }
+                } catch (_) {
+                    // ignore
+                }
+            }
+
+            window.applyStrategyTableFilter = applyFilter;
             applyFilter();
         };
 
@@ -1348,8 +1689,9 @@
             const bulkInput = document.getElementById("strategy-weight-bulk");
             const applyAllBtn = document.getElementById("strategy-weight-apply-all");
             const applyEnabledBtn = document.getElementById("strategy-weight-apply-enabled");
+            const applyVisibleBtn = document.getElementById("strategy-weight-apply-visible");
             const table = document.getElementById("strategy-table");
-            if (!bulkInput || !applyAllBtn || !applyEnabledBtn || !table) return;
+            if (!bulkInput || !applyAllBtn || !applyEnabledBtn || !applyVisibleBtn || !table) return;
 
             const tbody = table.querySelector("tbody");
             if (!tbody) return;
@@ -1360,15 +1702,16 @@
                 return Number.isFinite(value) ? value : null;
             };
 
-            const applyWeight = (onlyEnabled) => {
+            const applyWeight = (options) => {
                 const bulkValue = parseBulk();
                 if (bulkValue === null) {
                     alert("Enter a valid bulk weight.");
                     return;
                 }
                 rows.forEach(row => {
+                    if (options?.onlyVisible && row.classList.contains("hidden")) return;
                     const enabled = row.querySelector("input[name$='.enabled']")?.checked || false;
-                    if (onlyEnabled && !enabled) return;
+                    if (options?.onlyEnabled && !enabled) return;
                     const weightInput = row.querySelector("input[name$='.weight']");
                     if (!weightInput) return;
                     weightInput.value = String(bulkValue);
@@ -1377,8 +1720,81 @@
                 });
             };
 
-            applyAllBtn.addEventListener("click", () => applyWeight(false));
-            applyEnabledBtn.addEventListener("click", () => applyWeight(true));
+            applyAllBtn.addEventListener("click", () => applyWeight({ onlyEnabled: false, onlyVisible: false }));
+            applyEnabledBtn.addEventListener("click", () => applyWeight({ onlyEnabled: true, onlyVisible: false }));
+            applyVisibleBtn.addEventListener("click", () => applyWeight({ onlyEnabled: false, onlyVisible: true }));
+        };
+
+        const setupStrategyTableConfig = () => {
+            const searchInput = document.getElementById("strategy-table-search");
+            const hideInput = document.getElementById("strategy-table-hide");
+            const bulkInput = document.getElementById("strategy-weight-bulk");
+            const saveBtn = document.getElementById("strategy-table-save-config");
+            const table = document.getElementById("strategy-table");
+            if (!table) return;
+            const tbody = table.querySelector("tbody");
+            if (!tbody) return;
+
+            const key = "strategyTableConfig";
+
+            const loadConfig = () => {
+                const raw = window.localStorage.getItem(key);
+                if (!raw) return;
+                let data = null;
+                try {
+                    data = JSON.parse(raw);
+                } catch (e) {
+                    return;
+                }
+                if (searchInput && typeof data.search === "string") {
+                    searchInput.value = data.search;
+                    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+                if (hideInput && typeof data.hide === "string") {
+                    hideInput.value = data.hide;
+                    hideInput.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+                if (bulkInput && typeof data.bulk === "string") {
+                    bulkInput.value = data.bulk;
+                }
+                if (data.enabled && typeof data.enabled === "object") {
+                    Array.from(tbody.querySelectorAll("tr[data-strategy-key]")).forEach(row => {
+                        const keyName = row.dataset.strategyKey || "";
+                        if (!keyName || !(keyName in data.enabled)) return;
+                        const input = row.querySelector("input[name$='.enabled']");
+                        if (!input) return;
+                        input.checked = !!data.enabled[keyName];
+                        input.dispatchEvent(new Event("change", { bubbles: true }));
+                    });
+                }
+                if (typeof window.applyStrategyTableFilter === "function") {
+                    window.applyStrategyTableFilter();
+                }
+            };
+
+            const saveConfig = () => {
+                const enabled = {};
+                Array.from(tbody.querySelectorAll("tr[data-strategy-key]")).forEach(row => {
+                    const keyName = row.dataset.strategyKey || "";
+                    if (!keyName) return;
+                    const input = row.querySelector("input[name$='.enabled']");
+                    enabled[keyName] = input ? input.checked : false;
+                });
+
+                const payload = {
+                    search: searchInput ? searchInput.value : "",
+                    hide: hideInput ? hideInput.value : "",
+                    bulk: bulkInput ? bulkInput.value : "",
+                    enabled
+                };
+                window.localStorage.setItem(key, JSON.stringify(payload));
+            };
+
+            if (saveBtn) {
+                saveBtn.addEventListener("click", saveConfig);
+            }
+
+            loadConfig();
         };
 
         const applyChartSettings = () => {
@@ -1423,6 +1839,44 @@
         setupStrategyTableSort();
         setupStrategyTableSearch();
         setupStrategyTableBulkWeight();
+        setupStrategyTableConfig();
+
+        const restoreEnabledFromConfig = () => {
+            const table = document.getElementById("strategy-table");
+            if (!table) return;
+            const tbody = table.querySelector("tbody");
+            if (!tbody) return;
+            const raw = window.localStorage.getItem("strategyTableConfig");
+            if (!raw) return;
+            let data = null;
+            try {
+                data = JSON.parse(raw);
+            } catch (_) {
+                return;
+            }
+            if (!data || typeof data.enabled !== "object") return;
+            Array.from(tbody.querySelectorAll("tr[data-strategy-key]")).forEach(row => {
+                const keyName = row.dataset.strategyKey || "";
+                if (!keyName || !(keyName in data.enabled)) return;
+                const input = row.querySelector("input[name$='.enabled']");
+                if (!input) return;
+                input.checked = !!data.enabled[keyName];
+            });
+            updatePreview();
+        };
+
+        restoreEnabledFromConfig();
+
+        document.querySelectorAll(".notes-field").forEach((field) => {
+            field.addEventListener("focus", () => {
+                field.classList.add("expanded");
+                field.rows = 3;
+            });
+            field.addEventListener("blur", () => {
+                field.classList.remove("expanded");
+                field.rows = 1;
+            });
+        });
 
         window.deletePortfolio = async (name) => {
             if (!name) return;
