@@ -19,6 +19,8 @@ type AnalysisSettings struct {
 	Balance           string    `json:"balance"`
 	DrawdownThreshold string    `json:"drawdown_threshold"`
 	HeatmapInterval   string    `json:"heatmap_interval"`
+	SuggestAmp        float64   `json:"suggest_amp"`
+	SuggestMaxWeight  float64   `json:"suggest_max_weight"`
 	ChartsEnabled     bool      `json:"charts_enabled"`
 	ChartsThreshold   int       `json:"charts_threshold"`
 	ChartsEnabledSet  bool      `json:"charts_enabled_set"`

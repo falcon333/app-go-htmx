@@ -51,19 +51,19 @@ func buildMonthlyReturnTables(trades []SummaryTradeRow, startingCapital float64)
 		return sorted[i].Dt.Before(sorted[j].Dt)
 	})
 
+	if !isFinite(startingCapital) || startingCapital <= 0 {
+		startingCapital = defaultStartBalance
+	}
+	runningEq := startingCapital
+
 	ym := make(map[string]*monthlyBucket)
 	for _, t := range sorted {
 		if t.Dt.IsZero() {
 			continue
 		}
-		eqA := t.Balance
-		if !isFinite(eqA) {
-			continue
-		}
 		pnl := t.PnLAbs
-		eqB := eqA
-		if isFinite(pnl) {
-			eqB = eqA - pnl
+		if !isFinite(pnl) {
+			continue
 		}
 
 		y, m := t.Dt.Year(), int(t.Dt.Month())
@@ -74,14 +74,14 @@ func buildMonthlyReturnTables(trades []SummaryTradeRow, startingCapital float64)
 			ym[key] = bucket
 		}
 		if bucket.startEq == nil {
-			start := eqB
+			start := runningEq
 			bucket.startEq = &start
 		}
-		end := eqA
+
+		runningEq += pnl
+		end := runningEq
 		bucket.endEq = &end
-		if isFinite(pnl) {
-			bucket.usd += pnl
-		}
+		bucket.usd += pnl
 	}
 
 	if len(ym) == 0 {
@@ -110,9 +110,6 @@ func buildMonthlyReturnTables(trades []SummaryTradeRow, startingCapital float64)
 	}
 	sort.Ints(yearList)
 
-	if !isFinite(startingCapital) || startingCapital <= 0 {
-		startingCapital = defaultStartBalance
-	}
 	pctMax := defaultMonthlyPctMax
 	usdMax := math.Abs(startingCapital * pctMax)
 	if usdMax <= 0 {

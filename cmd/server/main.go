@@ -16,9 +16,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -111,20 +113,22 @@ type PortfolioMergeViewModel struct {
 	ChartThreshold    int
 	ChartEnabledCount int
 
-	AnalysisRangeQuick      string
-	AnalysisAutoRefresh     bool
-	AnalysisN               string
-	AnalysisUnit            string
-	AnalysisStartDate       string
-	AnalysisEndDate         string
-	AnalysisBalance         string
-	AnalysisDrawdownPct     string
-	AnalysisHeatmapInterval string
-	AnalysisSuggest         bool
-	AnalysisTradesLimit     int
-	AnalysisTradesOffset    int
-	AnalysisPortfolio       string
-	AnalysisResult          *AnalysisResult
+	AnalysisRangeQuick       string
+	AnalysisAutoRefresh      bool
+	AnalysisN                string
+	AnalysisUnit             string
+	AnalysisStartDate        string
+	AnalysisEndDate          string
+	AnalysisBalance          string
+	AnalysisDrawdownPct      string
+	AnalysisHeatmapInterval  string
+	AnalysisSuggest          bool
+	AnalysisSuggestAmp       float64
+	AnalysisSuggestMaxWeight float64
+	AnalysisTradesLimit      int
+	AnalysisTradesOffset     int
+	AnalysisPortfolio        string
+	AnalysisResult           *AnalysisResult
 }
 
 type AnalysisState struct {
@@ -138,6 +142,8 @@ type AnalysisState struct {
 	DrawdownThreshold string
 	HeatmapInterval   string
 	SuggestPortfolio  bool
+	SuggestAmp        float64
+	SuggestMaxWeight  float64
 	TradesLimit       int
 	TradesOffset      int
 	Portfolio         string
@@ -236,6 +242,8 @@ const defaultDrawdownThresholdPct = "5"
 const defaultDrawdownThreshold = 0.05
 const defaultHeatmapInterval = "hourly"
 const defaultTradesLimit = 300
+const defaultSuggestAmp = 2.0
+const defaultSuggestMaxWeight = 10.0
 
 func main() {
 	tmpl := template.Must(
@@ -1030,6 +1038,13 @@ func main() {
 		}
 	}()
 
+	// Auto-open the import/batch page in the default browser once the
+	// server has had a moment to bind to the port.
+	go func() {
+		time.Sleep(700 * time.Millisecond)
+		openBrowser("http://localhost:8080/import/batch")
+	}()
+
 	<-ctx.Done()
 	log.Println("shutdown signal received")
 
@@ -1043,6 +1058,24 @@ func main() {
 // =================================================
 // Helpers
 // =================================================
+
+// openBrowser opens the given URL in the OS default browser.
+// It is best-effort: any failure is logged but never fatal.
+func openBrowser(rawURL string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
+	case "darwin":
+		cmd = exec.Command("open", rawURL)
+	default: // linux, bsd, etc.
+		cmd = exec.Command("xdg-open", rawURL)
+	}
+	if err := cmd.Start(); err != nil {
+		log.Printf("could not open browser automatically: %v (open %s manually)", err, rawURL)
+	}
+}
+
 func parseTrades(input string) ([]portfolio.Trade, []string) {
 	parts := strings.Split(input, ",")
 
@@ -1494,35 +1527,37 @@ func buildPortfolioMergeViewModel(portfolioName string, analysis AnalysisState, 
 	preview := buildPortfolioFinalName(baseName, enabledCount, start, end, true, "")
 
 	return PortfolioMergeViewModel{
-		PortfolioName:           baseName,
-		PortfolioSelected:       portfolioName,
-		PortfolioItems:          items,
-		Rows:                    rows,
-		AutoAppendEnabled:       true,
-		FinalNamePreview:        preview,
-		SuccessMessage:          successMessage,
-		AnalysisRangeQuick:      analysis.RangeQuick,
-		AnalysisAutoRefresh:     analysis.AutoRefresh,
-		AnalysisN:               analysis.N,
-		AnalysisUnit:            analysis.Unit,
-		AnalysisStartDate:       analysis.StartDate,
-		AnalysisEndDate:         analysis.EndDate,
-		AnalysisBalance:         analysis.Balance,
-		AnalysisDrawdownPct:     analysis.DrawdownThreshold,
-		AnalysisHeatmapInterval: analysis.HeatmapInterval,
-		AnalysisSuggest:         analysis.SuggestPortfolio,
-		AnalysisTradesLimit:     analysis.TradesLimit,
-		AnalysisTradesOffset:    analysis.TradesOffset,
-		AnalysisPortfolio:       analysis.Portfolio,
-		AnalysisResult:          result,
-		ChartEngine:             chartEngine,
-		ChartLinkJS:             chartLinks.ChartJS,
-		ChartLinkTV:             chartLinks.TV,
-		HasChartData:            hasChartData,
-		ChartsEnabled:           chartsEnabled,
-		ChartsAutoEnabled:       autoEnabled && !analysis.ChartsEnabledSet,
-		ChartThreshold:          chartThreshold,
-		ChartEnabledCount:       enabledCount,
+		PortfolioName:            baseName,
+		PortfolioSelected:        portfolioName,
+		PortfolioItems:           items,
+		Rows:                     rows,
+		AutoAppendEnabled:        true,
+		FinalNamePreview:         preview,
+		SuccessMessage:           successMessage,
+		AnalysisRangeQuick:       analysis.RangeQuick,
+		AnalysisAutoRefresh:      analysis.AutoRefresh,
+		AnalysisN:                analysis.N,
+		AnalysisUnit:             analysis.Unit,
+		AnalysisStartDate:        analysis.StartDate,
+		AnalysisEndDate:          analysis.EndDate,
+		AnalysisBalance:          analysis.Balance,
+		AnalysisDrawdownPct:      analysis.DrawdownThreshold,
+		AnalysisHeatmapInterval:  analysis.HeatmapInterval,
+		AnalysisSuggest:          analysis.SuggestPortfolio,
+		AnalysisSuggestAmp:       analysis.SuggestAmp,
+		AnalysisSuggestMaxWeight: analysis.SuggestMaxWeight,
+		AnalysisTradesLimit:      analysis.TradesLimit,
+		AnalysisTradesOffset:     analysis.TradesOffset,
+		AnalysisPortfolio:        analysis.Portfolio,
+		AnalysisResult:           result,
+		ChartEngine:              chartEngine,
+		ChartLinkJS:              chartLinks.ChartJS,
+		ChartLinkTV:              chartLinks.TV,
+		HasChartData:             hasChartData,
+		ChartsEnabled:            chartsEnabled,
+		ChartsAutoEnabled:        autoEnabled && !analysis.ChartsEnabledSet,
+		ChartThreshold:           chartThreshold,
+		ChartEnabledCount:        enabledCount,
 	}, nil
 }
 
@@ -1539,6 +1574,8 @@ func defaultAnalysisState(portfolioName string) AnalysisState {
 		DrawdownThreshold: defaultDrawdownThresholdPct,
 		HeatmapInterval:   defaultHeatmapInterval,
 		SuggestPortfolio:  false,
+		SuggestAmp:        defaultSuggestAmp,
+		SuggestMaxWeight:  defaultSuggestMaxWeight,
 		TradesLimit:       defaultTradesLimit,
 		TradesOffset:      0,
 		Portfolio:         portfolio,
@@ -1568,6 +1605,12 @@ func loadAnalysisState(portfolioName string) AnalysisState {
 	if strings.TrimSpace(stored.HeatmapInterval) != "" {
 		state.HeatmapInterval = normalizeHeatmapInterval(stored.HeatmapInterval)
 	}
+	if stored.SuggestAmp > 0 {
+		state.SuggestAmp = stored.SuggestAmp
+	}
+	if stored.SuggestMaxWeight > 0 {
+		state.SuggestMaxWeight = stored.SuggestMaxWeight
+	}
 	state.Portfolio = stored.Portfolio
 	state.ChartsEnabled = stored.ChartsEnabled
 	state.ChartsEnabledSet = stored.ChartsEnabledSet
@@ -1594,6 +1637,8 @@ func saveAnalysisState(state AnalysisState) error {
 		Balance:           state.Balance,
 		DrawdownThreshold: strings.TrimSpace(state.DrawdownThreshold),
 		HeatmapInterval:   normalizeHeatmapInterval(state.HeatmapInterval),
+		SuggestAmp:        normalizeSuggestAmp(state.SuggestAmp),
+		SuggestMaxWeight:  normalizeSuggestMaxWeight(state.SuggestMaxWeight),
 		ChartsEnabled:     state.ChartsEnabled,
 		ChartsThreshold:   normalizeChartThreshold(state.ChartsThreshold),
 		ChartsEnabledSet:  state.ChartsEnabledSet,
@@ -1614,6 +1659,8 @@ func parseAnalysisState(form url.Values) AnalysisState {
 	heatmapInterval := normalizeHeatmapInterval(form.Get("analysis_heatmap_interval"))
 	tradesLimit := normalizeTradesLimit(form.Get("analysis_trades_limit"))
 	tradesOffset := normalizeTradesOffset(form.Get("analysis_trades_offset"))
+	suggestAmp := normalizeSuggestAmp(parseFloatOrZero(form.Get("analysis_suggest_amp")))
+	suggestMaxWeight := normalizeSuggestMaxWeight(parseFloatOrZero(form.Get("analysis_suggest_max_weight")))
 	suggestPortfolio := form.Get("analysis_suggest") == "on"
 	chartsEnabledSet := form.Has("analysis_charts_enabled")
 	return AnalysisState{
@@ -1627,6 +1674,8 @@ func parseAnalysisState(form url.Values) AnalysisState {
 		DrawdownThreshold: drawdownThreshold,
 		HeatmapInterval:   heatmapInterval,
 		SuggestPortfolio:  suggestPortfolio,
+		SuggestAmp:        suggestAmp,
+		SuggestMaxWeight:  suggestMaxWeight,
 		TradesLimit:       tradesLimit,
 		TradesOffset:      tradesOffset,
 		Portfolio:         strings.TrimSpace(form.Get("analysis_portfolio")),
@@ -1966,7 +2015,7 @@ func computeAnalysisResultWithMappingMap(state AnalysisState, mapByKey map[strin
 	tradeDurationBuckets := buildTradeDurationBuckets(tradeRows)
 	var suggestions []SuggestedPortfolio
 	if state.SuggestPortfolio {
-		suggestions = buildPortfolioSuggestions(strategySummary)
+		suggestions = buildPortfolioSuggestions(strategySummary, state.SuggestAmp, state.SuggestMaxWeight)
 	}
 	return &AnalysisResult{
 		Portfolio:            buildPortfolioLabel(state),
@@ -2383,6 +2432,32 @@ func normalizeTradesOffset(raw string) int {
 		return 0
 	}
 	return parsed
+}
+
+func parseFloatOrZero(raw string) float64 {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+	return parsed
+}
+
+func normalizeSuggestAmp(value float64) float64 {
+	if value <= 0 {
+		return defaultSuggestAmp
+	}
+	return value
+}
+
+func normalizeSuggestMaxWeight(value float64) float64 {
+	if value <= 0 {
+		return defaultSuggestMaxWeight
+	}
+	return value
 }
 
 func resolveChartSettings(state AnalysisState, enabledCount int) (chartsEnabled bool, autoEnabled bool, threshold int) {

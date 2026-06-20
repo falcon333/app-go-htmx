@@ -1198,5 +1198,238 @@
     "meta": {
       "strategy_count": 9
     }
+  },
+  {
+    "name": "MES-SPX-ALL_24Systems_01-06-2000-01-19-2026_01-27-2026-11-48",
+    "base_name": "MES-SPX-ALL",
+    "created_at": "2026-01-27T19:48:17.2484271Z",
+    "updated_at": "2026-01-27T19:48:17.2484271Z",
+    "filters": {
+      "from": "2000-01-06",
+      "to": "2026-01-19",
+      "balance": 100000,
+      "range_mode": "ALL"
+    },
+    "mappings": [
+      {
+        "strategy": "ICHI-SPX-30",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "ICHI-SPX-5",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "ICHI-X-SPX-60",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "MA-SPX-10",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "PIV-MES1!-45",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "PIV-P-MES1!-45",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "PIV-SPX-45",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSD-MES1!-120",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSD-MES1!-60",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSD-SPX-5",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSD-SPX-60",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-MES1!-45",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-MES1!-5",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-MES1!-60",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-P-MES1!-45",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-P-MES1!-60",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-SPX-10",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-SPX-15",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-X-MES1!-30",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-X-MES1!-60",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-X-SPX-60",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-Z-MES1!-30",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "RSI-Z-MES1!-60",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      },
+      {
+        "strategy": "STOCH-MES1!-60",
+        "enabled": true,
+        "weight": 1,
+        "ratio_mode": false,
+        "ratio_unit": 1,
+        "ratio_amount": 10000,
+        "notes": ""
+      }
+    ],
+    "meta": {
+      "strategy_count": 24
+    }
   }
 ]

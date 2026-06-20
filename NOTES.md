@@ -9,6 +9,8 @@ GitHub sync:
   git commit -m "Changes to the chart layout"
   git push
 
+
+http://localhost:8080/portfolios/merge
 netstat -ano | findstr :8080
 taskkill /PID <PID> /F
 go run ./cmd/server

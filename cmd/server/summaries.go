@@ -268,8 +268,9 @@ func buildStrategySummary(trades []SummaryTradeRow, startingBalance float64, wei
 
 		yrs := math.Max(dates[len(dates)-1].Sub(dates[0]).Hours()/24/365.25, 0)
 		cagr := 0.0
-		if yrs > 0 && initBal > 0 {
-			cagr = math.Pow(b2/initBal, 1/yrs) - 1
+		endBal := initBal + netUsd
+		if yrs > 0 && initBal > 0 && endBal > 0 {
+			cagr = math.Pow(endBal/initBal, 1/yrs) - 1
 		}
 
 		winRate := 0.0
@@ -513,8 +514,9 @@ func buildPairSummary(trades []SummaryTradeRow, startingBalance float64, weights
 
 		yrs := math.Max(dates[len(dates)-1].Sub(dates[0]).Hours()/24/365.25, 0)
 		cagr := 0.0
-		if yrs > 0 && initBal > 0 {
-			cagr = math.Pow(b2/initBal, 1/yrs) - 1
+		endBal := initBal + netUsd
+		if yrs > 0 && initBal > 0 && endBal > 0 {
+			cagr = math.Pow(endBal/initBal, 1/yrs) - 1
 		}
 
 		winRate := 0.0

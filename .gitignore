@@ -1,0 +1,29 @@
+# ---- Go build artifacts ----
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/portfolio-server.exe
+
+# Build output / temp dir (do NOT track compiled binaries or logs)
+/tmp/
+*.log
+
+# Test binaries / coverage
+*.test
+*.out
+coverage.*
+
+# ---- Editor / OS cruft ----
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# ---- NOTE: shared app state is intentionally TRACKED ----
+# data/portfolios.json
+# internal/trades/analysis_settings.json
+# internal/trades/score_weights.json
+# These hold portfolio state we sync across machines, so they are
+# deliberately NOT ignored. Pull before editing, push after.

@@ -33,7 +33,7 @@ const (
 	maxSuggestionCount  = 5
 )
 
-func buildPortfolioSuggestions(rows []StrategySummaryRow) []SuggestedPortfolio {
+func buildPortfolioSuggestions(rows []StrategySummaryRow, amplifyFactor, maxWeight float64) []SuggestedPortfolio {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -77,9 +77,9 @@ func buildPortfolioSuggestions(rows []StrategySummaryRow) []SuggestedPortfolio {
 	})
 
 	suggestions := []SuggestedPortfolio{
-		buildSuggestedPortfolio("Return Max", byReturn, candidates, fallback, "Highest CAGR subject to risk caps."),
-		buildSuggestedPortfolio("Low Drawdown", byDrawdown, candidates, fallback, "Lowest drawdown with solid scores."),
-		buildSuggestedPortfolio("Balanced", byScore, candidates, fallback, "Best overall scorecard balance."),
+		buildSuggestedPortfolio("Return Max", byReturn, candidates, fallback, "Highest CAGR subject to risk caps.", amplifyFactor, maxWeight),
+		buildSuggestedPortfolio("Low Drawdown", byDrawdown, candidates, fallback, "Lowest drawdown with solid scores.", amplifyFactor, maxWeight),
+		buildSuggestedPortfolio("Balanced", byScore, candidates, fallback, "Best overall scorecard balance.", amplifyFactor, maxWeight),
 	}
 
 	return suggestions
@@ -102,8 +102,8 @@ func filterSuggestionCandidates(rows []StrategySummaryRow) []StrategySummaryRow 
 	return out
 }
 
-func buildSuggestedPortfolio(name string, rows []StrategySummaryRow, candidates []StrategySummaryRow, relaxed bool, baseRationale string) SuggestedPortfolio {
-	strategies, score, cagr, maxDD := buildSuggestedStrategies(rows)
+func buildSuggestedPortfolio(name string, rows []StrategySummaryRow, candidates []StrategySummaryRow, relaxed bool, baseRationale string, amplifyFactor, maxWeight float64) SuggestedPortfolio {
+	strategies, score, cagr, maxDD := buildSuggestedStrategies(rows, amplifyFactor, maxWeight)
 	rationale := fmt.Sprintf("%s Constraints: trades≥%d, PF≥%.2f, maxDD≤%.0f%%.", baseRationale, minSuggestionTrades, minSuggestionPF, maxSuggestionDD*100)
 	if relaxed {
 		rationale = baseRationale + " Not enough strategies met constraints, so filters were relaxed."
@@ -119,7 +119,7 @@ func buildSuggestedPortfolio(name string, rows []StrategySummaryRow, candidates 
 	}
 }
 
-func buildSuggestedStrategies(rows []StrategySummaryRow) ([]SuggestedStrategy, float64, float64, float64) {
+func buildSuggestedStrategies(rows []StrategySummaryRow, amplifyFactor, maxWeight float64) ([]SuggestedStrategy, float64, float64, float64) {
 	if len(rows) == 0 {
 		return nil, 0, 0, 0
 	}
@@ -134,6 +134,12 @@ func buildSuggestedStrategies(rows []StrategySummaryRow) ([]SuggestedStrategy, f
 			maxScore = row.Scorecard
 		}
 	}
+	if amplifyFactor <= 0 {
+		amplifyFactor = 2.0
+	}
+	if maxWeight <= 0 {
+		maxWeight = 10.0
+	}
 
 	rawWeights := make([]float64, len(rows))
 	ddMagnitudes := make([]float64, len(rows))
@@ -146,7 +152,10 @@ func buildSuggestedStrategies(rows []StrategySummaryRow) ([]SuggestedStrategy, f
 		}
 		if maxScore > minScore {
 			normalizedScore := (row.Scorecard - minScore) / (maxScore - minScore)
-			w *= 1 + (normalizedScore * 2.0)
+			w *= 1 + (normalizedScore * amplifyFactor)
+		}
+		if w > maxWeight {
+			w = maxWeight
 		}
 		rawWeights[i] = w
 		weightSum += w
